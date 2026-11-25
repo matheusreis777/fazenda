@@ -4,7 +4,12 @@
     {
       "name": "fazenda",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "dev", "--port", "3100"],
+      "runtimeArgs": [
+        "next",
+        "dev",
+        "--port",
+        "3100"
+      ],
       "port": 3100
     },
     {
@@ -12,7 +17,7 @@
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "-e",
-        "process.env.NEXT_PUBLIC_MODO_EXEMPLO='1';require('child_process').spawn('npx',['next','dev','--port','3101'],{stdio:'inherit',shell:true})"
+        "process.env.NEXT_PUBLIC_MODO_EXEMPLO='1';process.env.NEXT_DIST_DIR='.next-exemplo';const {execSync,spawn}=require('child_process');execSync('npx next build',{stdio:'inherit',env:process.env});spawn('npx',['next','start','--port','3101'],{stdio:'inherit',shell:true,env:process.env})"
       ],
       "port": 3101
     }

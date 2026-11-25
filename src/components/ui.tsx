@@ -41,6 +41,21 @@ const ICONES = {
   ),
   lua: <path d="M20 14.5A8 8 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z" />,
   dev: <path d="m8 8-4 4 4 4m8-8 4 4-4 4M13.5 5l-3 14" />,
+  sanidade: <path d="m18 2 4 4m-6-2 4 4M14 6 6 14l-1 5 5-1 8-8M9 11l4 4M3 21l3-3" />,
+  equipe: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.3c1.8.8 3 2.9 3 5.7" />
+    </>
+  ),
+  relatorios: <path d="M4 20V10m6 10V4m6 16v-7m5 7H3" />,
+  mais: (
+    <>
+      <circle cx="5" cy="12" r="1.3" />
+      <circle cx="12" cy="12" r="1.3" />
+      <circle cx="19" cy="12" r="1.3" />
+    </>
+  ),
 };
 export type NomeIcone = keyof typeof ICONES;
 

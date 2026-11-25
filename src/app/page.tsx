@@ -1,7 +1,8 @@
 'use client';
 
 import { Barra, Cartao, Etiqueta, Grade, Linha, Secao, Tela } from '@/components/ui';
-import { CATEGORIAS, type Categoria, mesIso, modoExemplo, numero, reais, useDados } from '@/lib/dados';
+import { CATEGORIAS, type Categoria, diaMes, mesIso, modoExemplo, nomeLote, numero, proximosManejos, reais, somarDias, useDados } from '@/lib/dados';
+import { hojeIso } from '@/lib/formato';
 
 function saudacao() {
   const hora = new Date().getHours();
@@ -9,7 +10,9 @@ function saudacao() {
 }
 
 export default function Inicio() {
-  const { lotes, animais, despesas: todasDespesas, estoque } = useDados();
+  const { lotes, animais, despesas: todasDespesas, estoque, sanidade } = useDados();
+  const hojeData = hojeIso();
+  const manejos = proximosManejos(sanidade, somarDias(hojeData, 7));
   const mes = mesIso();
   const despesas = todasDespesas.filter((d) => d.data.startsWith(mes));
   const ativos = animais.filter((a) => !a.saida_data);
@@ -49,6 +52,20 @@ export default function Inicio() {
           href="/alimentacao"
         />
       </Grade>
+
+      {manejos.length > 0 && (
+        <Secao titulo="Sanidade nesta semana">
+          {manejos.map((s) => (
+            <Linha
+              key={s.id}
+              marca={diaMes(s.proxima_data!)}
+              titulo={s.produto}
+              subtitulo={s.lote_id ? `Lote ${nomeLote(lotes, s.lote_id)}` : `Brinco ${animais.find((a) => a.id === s.animal_id)?.brinco ?? '—'}`}
+              etiqueta={s.proxima_data! < hojeData ? <Etiqueta texto="Atrasado" tom="alerta" /> : undefined}
+            />
+          ))}
+        </Secao>
+      )}
 
       {baixos.length > 0 && (
         <Secao titulo="Repor estoque">

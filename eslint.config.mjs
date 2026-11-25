@@ -6,5 +6,5 @@ export default defineConfig([
   ...nextVitals,
   ...nextTs,
   // A função de servidor é Deno, não faz parte do app.
-  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts', 'supabase/functions/**']),
+  globalIgnores(['.next/**', '.next-exemplo/**', 'out/**', 'build/**', 'next-env.d.ts', 'supabase/functions/**']),
 ]);

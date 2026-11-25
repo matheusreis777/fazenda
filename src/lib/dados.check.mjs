@@ -60,3 +60,34 @@ assert.equal(mesIso(2, new Date(2026, 10, 25)), '2027-01');
 assert.equal(mesIso(-11, new Date(2026, 10, 25)), '2025-12');
 assert.equal(nomeMes('2026-11'), 'Novembro de 2026');
 console.log('OK: meses');
+
+// Pesagens: peso atual e ganho médio diário a partir da entrada.
+const { dias, evolucaoPeso, proximosManejos, somarDias, funcionarioEmUso, maquinaEmUso } = await import('./dados.ts');
+assert.equal(dias('2026-01-15', '2026-11-01'), 290);
+assert.equal(dias('2026-02-28', '2026-03-01'), 1);
+assert.equal(somarDias('2026-12-25', 10), '2027-01-04');
+const boi = { id: 77, entrada_data: '2026-01-01', entrada_peso: 300 };
+assert.deepEqual(evolucaoPeso(boi, []), { peso: 300, data: '2026-01-01', gmd: null });
+const ev = evolucaoPeso(boi, [
+  { id: 1, animal_id: 77, data: '2026-03-02', peso: 360 },
+  { id: 2, animal_id: 77, data: '2026-01-31', peso: 330 },
+  { id: 3, animal_id: 99, data: '2026-05-01', peso: 999 },
+]);
+assert.equal(ev.peso, 360);
+assert.equal(ev.gmd, 1); // 60 kg em 60 dias
+
+// Sanidade: só a aplicação mais recente de cada produto/alvo conta; atrasadas entram, futuras distantes não.
+const manejos = proximosManejos(
+  [
+    { id: 1, data: '2026-05-10', produto: 'Aftosa', animal_id: null, lote_id: 1, proxima_data: '2026-11-10' },
+    { id: 2, data: '2026-11-12', produto: 'aftosa ', animal_id: null, lote_id: 1, proxima_data: '2027-05-12' },
+    { id: 3, data: '2026-05-10', produto: 'Aftosa', animal_id: null, lote_id: 2, proxima_data: '2026-11-10' },
+    { id: 4, data: '2026-11-01', produto: 'Brucelose', animal_id: 5, lote_id: null, proxima_data: null },
+  ],
+  '2026-12-25',
+);
+assert.deepEqual(manejos.map((m) => m.id), [3]);
+
+assert.equal(funcionarioEmUso(1), true);
+assert.equal(maquinaEmUso(2), true);
+console.log('OK: pesagens e sanidade');

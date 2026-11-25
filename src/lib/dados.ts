@@ -1,4 +1,4 @@
-// Estado que as telas leem. Os nomes dos campos são os do schema em supabase/migrations/0001_inicial.sql.
+// Estado que as telas leem. Os nomes dos campos são os do schema em supabase/migrations/.
 // Sem Supabase configurado, vale o modo exemplo: dados abaixo, alterados só em memória.
 // Com Supabase, src/lib/banco.ts se registra aqui (`conectar`) e `salvar`/`excluir` passam a gravar no banco.
 // Este arquivo não importa nada do app de propósito: dados.check.mjs roda ele direto no Node.
@@ -46,10 +46,65 @@ export type Despesa = {
   /** Preenchidos juntos quando a despesa é compra de insumo (entra no estoque). */
   insumo_id?: number | null;
   quantidade?: number | null;
+  /** Gasto ligado a um funcionário ou a uma máquina (salário, manutenção, diesel…). */
+  funcionario_id?: number | null;
+  maquina_id?: number | null;
 };
-export type Recorrente = { id: number; descricao: string; categoria: Categoria; valor: number; dia_vencimento: number; ativo: boolean };
+export type Recorrente = {
+  id: number;
+  descricao: string;
+  categoria: Categoria;
+  valor: number;
+  dia_vencimento: number;
+  ativo: boolean;
+  funcionario_id?: number | null;
+  maquina_id?: number | null;
+};
+export type Pesagem = { id: number; animal_id: number; data: string; peso: number };
 
-export type Base = { lotes: Lote[]; animais: Animal[]; insumos: InsumoBase[]; tratos: TratoBase[]; despesas: Despesa[]; recorrentes: Recorrente[] };
+export const TIPOS_SANIDADE = {
+  vacina: 'Vacina',
+  vermifugo: 'Vermífugo',
+  tratamento: 'Tratamento',
+  exame: 'Exame',
+  outro: 'Outro',
+} as const;
+export type TipoSanidade = keyof typeof TIPOS_SANIDADE;
+/** Aplicado num animal OU num lote inteiro (exatamente um dos dois). */
+export type Sanidade = {
+  id: number;
+  data: string;
+  tipo: TipoSanidade;
+  produto: string;
+  animal_id: number | null;
+  lote_id: number | null;
+  /** Quando repetir (próxima dose, reforço). */
+  proxima_data: string | null;
+  observacao: string | null;
+};
+export type Funcionario = {
+  id: number;
+  nome: string;
+  funcao: string | null;
+  telefone: string | null;
+  salario: number | null;
+  admissao: string | null;
+  ativo: boolean;
+};
+export type Maquina = { id: number; nome: string; tipo: string | null; identificacao: string | null; ano: number | null; ativo: boolean };
+
+export type Base = {
+  lotes: Lote[];
+  animais: Animal[];
+  insumos: InsumoBase[];
+  tratos: TratoBase[];
+  despesas: Despesa[];
+  recorrentes: Recorrente[];
+  pesagens: Pesagem[];
+  sanidade: Sanidade[];
+  funcionarios: Funcionario[];
+  maquinas: Maquina[];
+};
 
 const semSaida = { saida_data: null, saida_tipo: null, saida_valor: null } as const;
 
@@ -85,27 +140,67 @@ const EXEMPLO: Base = {
   ],
   despesas: [
     { id: 1, data: '2026-11-20', categoria: 'alimentacao', descricao: 'Ração de engorda — 2.000 kg', valor: 4600, insumo_id: 1, quantidade: 2000 },
-    { id: 2, data: '2026-11-18', categoria: 'maquinario', descricao: 'Troca de óleo do trator', valor: 780 },
-    { id: 3, data: '2026-11-15', categoria: 'maquinario', descricao: 'Diesel — 400 L', valor: 2440 },
+    { id: 2, data: '2026-11-18', categoria: 'maquinario', descricao: 'Troca de óleo do trator', valor: 780, maquina_id: 1 },
+    { id: 3, data: '2026-11-15', categoria: 'maquinario', descricao: 'Diesel — 400 L', valor: 2440, maquina_id: 1 },
     { id: 4, data: '2026-11-12', categoria: 'mantimentos', descricao: 'Compras da sede', valor: 930 },
     { id: 5, data: '2026-11-10', categoria: 'fixo', descricao: 'Energia elétrica', valor: 640, recorrente: true },
-    { id: 6, data: '2026-11-05', categoria: 'funcionarios', descricao: 'Salário — José', valor: 2400, recorrente: true },
-    { id: 7, data: '2026-11-05', categoria: 'funcionarios', descricao: 'Salário — Antônio', valor: 2100, recorrente: true },
+    { id: 6, data: '2026-11-05', categoria: 'funcionarios', descricao: 'Salário — José', valor: 2400, recorrente: true, funcionario_id: 1 },
+    { id: 7, data: '2026-11-05', categoria: 'funcionarios', descricao: 'Salário — Antônio', valor: 2100, recorrente: true, funcionario_id: 2 },
+    { id: 9, data: '2026-10-28', categoria: 'maquinario', descricao: 'Pneu da carreta', valor: 1350, maquina_id: 2 },
+    { id: 10, data: '2026-10-20', categoria: 'mantimentos', descricao: 'Ferramentas e EPI', valor: 640 },
+    { id: 11, data: '2026-10-05', categoria: 'funcionarios', descricao: 'Salário — José', valor: 2400, recorrente: true, funcionario_id: 1 },
+    { id: 12, data: '2026-10-05', categoria: 'funcionarios', descricao: 'Salário — Antônio', valor: 2100, recorrente: true, funcionario_id: 2 },
     { id: 8, data: '2026-11-03', categoria: 'outros', descricao: 'Arame e grampos para cerca', valor: 510 },
   ],
   recorrentes: [
-    { id: 1, descricao: 'Salário — José', categoria: 'funcionarios', valor: 2400, dia_vencimento: 5, ativo: true },
-    { id: 2, descricao: 'Salário — Antônio', categoria: 'funcionarios', valor: 2100, dia_vencimento: 5, ativo: true },
+    { id: 1, descricao: 'Salário — José', categoria: 'funcionarios', valor: 2400, dia_vencimento: 5, ativo: true, funcionario_id: 1 },
+    { id: 2, descricao: 'Salário — Antônio', categoria: 'funcionarios', valor: 2100, dia_vencimento: 5, ativo: true, funcionario_id: 2 },
     { id: 3, descricao: 'Energia elétrica', categoria: 'fixo', valor: 640, dia_vencimento: 10, ativo: true },
     { id: 4, descricao: 'Internet rural', categoria: 'fixo', valor: 180, dia_vencimento: 15, ativo: true },
     { id: 5, descricao: 'Arrendamento do pasto vizinho', categoria: 'fixo', valor: 1500, dia_vencimento: 20, ativo: false },
+  ],
+  pesagens: [
+    { id: 1, animal_id: 1, data: '2026-07-10', peso: 285 },
+    { id: 2, animal_id: 1, data: '2026-10-15', peso: 352 },
+    { id: 3, animal_id: 2, data: '2026-07-10', peso: 296 },
+    { id: 4, animal_id: 2, data: '2026-10-15', peso: 371 },
+    { id: 5, animal_id: 3, data: '2026-10-15', peso: 318 },
+    { id: 6, animal_id: 5, data: '2026-08-01', peso: 470 },
+    { id: 7, animal_id: 5, data: '2026-11-01', peso: 548 },
+    { id: 8, animal_id: 6, data: '2026-11-01', peso: 562 },
+  ],
+  sanidade: [
+    { id: 1, data: '2026-05-10', tipo: 'vacina', produto: 'Febre aftosa', animal_id: null, lote_id: 1, proxima_data: '2026-11-10', observacao: null },
+    { id: 2, data: '2026-05-10', tipo: 'vacina', produto: 'Febre aftosa', animal_id: null, lote_id: 2, proxima_data: '2026-11-10', observacao: null },
+    { id: 3, data: '2026-11-12', tipo: 'vacina', produto: 'Febre aftosa', animal_id: null, lote_id: 1, proxima_data: '2027-05-12', observacao: null },
+    { id: 4, data: '2026-09-01', tipo: 'vermifugo', produto: 'Ivermectina 1%', animal_id: null, lote_id: 3, proxima_data: '2026-12-01', observacao: '1 ml para cada 50 kg' },
+    { id: 5, data: '2026-11-18', tipo: 'tratamento', produto: 'Antibiótico (pneumonia)', animal_id: 4, lote_id: null, proxima_data: '2026-11-21', observacao: '3 doses, a cada 72 h' },
+  ],
+  funcionarios: [
+    { id: 1, nome: 'José da Silva', funcao: 'Vaqueiro', telefone: '(64) 99999-0001', salario: 2400, admissao: '2023-02-01', ativo: true },
+    { id: 2, nome: 'Antônio Souza', funcao: 'Tratorista', telefone: '(64) 99999-0002', salario: 2100, admissao: '2024-08-15', ativo: true },
+  ],
+  maquinas: [
+    { id: 1, nome: 'Trator', tipo: 'Trator', identificacao: 'Massey Ferguson 4275', ano: 2015, ativo: true },
+    { id: 2, nome: 'Carreta', tipo: 'Implemento', identificacao: null, ano: 2018, ativo: true },
   ],
 };
 
 const maisRecentePrimeiro = (a: { data: string; id: number }, b: { data: string; id: number }) =>
   b.data.localeCompare(a.data) || b.id - a.id;
 
-export const BASE_VAZIA: Base = { lotes: [], animais: [], insumos: [], tratos: [], despesas: [], recorrentes: [] };
+export const BASE_VAZIA: Base = {
+  lotes: [],
+  animais: [],
+  insumos: [],
+  tratos: [],
+  despesas: [],
+  recorrentes: [],
+  pesagens: [],
+  sanidade: [],
+  funcionarios: [],
+  maquinas: [],
+};
 
 let base: Base = EXEMPLO;
 /**
@@ -134,7 +229,19 @@ function derivar(b: Base) {
       return { ...t, insumo: insumo?.nome ?? '—', unidade: insumo?.unidade ?? '' };
     })
     .sort(maisRecentePrimeiro);
-  return { ...situacao, lotes: b.lotes, animais: b.animais, estoque, tratos, despesas: [...b.despesas].sort(maisRecentePrimeiro), recorrentes: b.recorrentes };
+  return {
+    ...situacao,
+    lotes: b.lotes,
+    animais: b.animais,
+    estoque,
+    tratos,
+    despesas: [...b.despesas].sort(maisRecentePrimeiro),
+    recorrentes: b.recorrentes,
+    pesagens: [...b.pesagens].sort(maisRecentePrimeiro),
+    sanidade: [...b.sanidade].sort(maisRecentePrimeiro),
+    funcionarios: [...b.funcionarios].sort((x, y) => Number(y.ativo) - Number(x.ativo) || x.nome.localeCompare(y.nome, 'pt-BR')),
+    maquinas: [...b.maquinas].sort((x, y) => Number(y.ativo) - Number(x.ativo) || x.nome.localeCompare(y.nome, 'pt-BR')),
+  };
 }
 
 let dados = derivar(base);
@@ -190,7 +297,13 @@ export async function salvar<K extends keyof Base>(colecao: K, item: Alteracao<K
 
 export async function excluir(colecao: keyof Base, id: number): Promise<string | null> {
   if (remoto) return remoto.excluir(colecao, id);
-  definir({ ...base, [colecao]: (base[colecao] as { id: number }[]).filter((x) => x.id !== id) });
+  const nova = { ...base, [colecao]: (base[colecao] as { id: number }[]).filter((x) => x.id !== id) };
+  // Igual ao banco (on delete cascade): excluir o animal leva junto as pesagens e a sanidade dele.
+  if (colecao === 'animais') {
+    nova.pesagens = base.pesagens.filter((p) => p.animal_id !== id);
+    nova.sanidade = base.sanidade.filter((s) => s.animal_id !== id);
+  }
+  definir(nova);
   return null;
 }
 
@@ -199,7 +312,52 @@ export const insumoEmUso = (id: number) =>
   base.tratos.some((t) => t.insumo_id === id) || base.despesas.some((d) => d.insumo_id === id);
 
 /** Lote com animais (inclusive os que já saíram) ou tratos não pode ser excluído, pela mesma razão. */
-export const loteEmUso = (id: number) => base.animais.some((a) => a.lote_id === id) || base.tratos.some((t) => t.lote_id === id);
+export const loteEmUso = (id: number) =>
+  base.animais.some((a) => a.lote_id === id) || base.tratos.some((t) => t.lote_id === id) || base.sanidade.some((s) => s.lote_id === id);
+
+/** Funcionário ou máquina com despesas lançadas não pode ser excluído: o caminho é marcar como inativo. */
+export const funcionarioEmUso = (id: number) =>
+  base.despesas.some((d) => d.funcionario_id === id) || base.recorrentes.some((r) => r.funcionario_id === id);
+export const maquinaEmUso = (id: number) => base.despesas.some((d) => d.maquina_id === id) || base.recorrentes.some((r) => r.maquina_id === id);
+
+/** Dias entre duas datas ISO ('AAAA-MM-DD'), contando de `de` até `ate`. */
+export function dias(de: string, ate: string): number {
+  return Math.round((Date.UTC(+ate.slice(0, 4), +ate.slice(5, 7) - 1, +ate.slice(8, 10)) - Date.UTC(+de.slice(0, 4), +de.slice(5, 7) - 1, +de.slice(8, 10))) / 86_400_000);
+}
+
+/** Data ISO + N dias. */
+export function somarDias(iso: string, n: number): string {
+  const d = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n));
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Peso atual e ganho médio diário (GMD) de um animal, considerando a entrada como a primeira pesagem.
+ * `gmd` é null enquanto não houver pesagem depois da entrada.
+ */
+export function evolucaoPeso(animal: Animal, pesagens: Pesagem[]): { peso: number; data: string; gmd: number | null } {
+  const doAnimal = pesagens.filter((p) => p.animal_id === animal.id && p.data >= animal.entrada_data);
+  const ultima = doAnimal.reduce<Pesagem | null>((u, p) => (!u || p.data > u.data || (p.data === u.data && p.id > u.id) ? p : u), null);
+  if (!ultima) return { peso: animal.entrada_peso, data: animal.entrada_data, gmd: null };
+  const periodo = dias(animal.entrada_data, ultima.data);
+  return { peso: ultima.peso, data: ultima.data, gmd: periodo > 0 ? (ultima.peso - animal.entrada_peso) / periodo : null };
+}
+
+/**
+ * Manejos sanitários a repetir: para cada alvo (animal ou lote) e produto, vale só a aplicação mais recente;
+ * entra na lista se ela tem próxima data até `ate` (inclusive as atrasadas).
+ */
+export function proximosManejos(registros: Sanidade[], ate: string): Sanidade[] {
+  const maisRecente = new Map<string, Sanidade>();
+  for (const s of registros) {
+    const chave = `${s.animal_id ?? ''}|${s.lote_id ?? ''}|${s.produto.trim().toLowerCase()}`;
+    const atual = maisRecente.get(chave);
+    if (!atual || s.data > atual.data || (s.data === atual.data && s.id > atual.id)) maisRecente.set(chave, s);
+  }
+  return [...maisRecente.values()]
+    .filter((s) => s.proxima_data && s.proxima_data <= ate)
+    .sort((a, b) => a.proxima_data!.localeCompare(b.proxima_data!));
+}
 
 /** Recebe a lista (de useDados) em vez de ler o estado direto, para a tela atualizar quando um lote muda de nome. */
 export const nomeLote = (lotes: Lote[], id: number) => lotes.find((l) => l.id === id)?.nome ?? '—';

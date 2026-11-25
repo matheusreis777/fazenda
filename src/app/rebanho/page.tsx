@@ -4,10 +4,13 @@ import { useState } from 'react';
 
 import { type Campo, Formulario, type Valores } from '@/components/formulario';
 import { Botao, CAMPO, Cartao, Chip, Chips, Etiqueta, Grade, Icone, Linha, Secao, Tela, Vazio } from '@/components/ui';
-import { type Animal, diaMes, excluir, type Lote, loteEmUso, nomeLote, numero, reais, salvar, useDados } from '@/lib/dados';
+import { type Animal, diaMes, evolucaoPeso, excluir, type Lote, loteEmUso, nomeLote, numero, type Pesagem, reais, salvar, useDados } from '@/lib/dados';
 import { num, numParaTexto } from '@/lib/formato';
 
 const SAIDA = { venda: 'Vendido', morte: 'Morte', abate: 'Abate' } as const;
+
+/** 0,8123 → '0,81 kg/dia' */
+const kgDia = (gmd: number) => `${gmd.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg/dia`;
 
 /** Dados de cadastro do animal: usados na entrada (novo) e em "Editar dados". */
 const CAMPOS_CADASTRO: Campo[] = [
@@ -31,7 +34,8 @@ const cadastro = (v: Valores) => ({
 });
 
 export default function Rebanho() {
-  const { lotes, animais } = useDados();
+  const { lotes, animais, pesagens } = useDados();
+  const [formPesagem, setFormPesagem] = useState<Pesagem | null>(null);
   const opcoesLote = lotes.map((l) => ({ valor: String(l.id), rotulo: l.nome }));
   // { item } = editando aquele lote; {} = novo; null = fechado.
   const [formLote, setFormLote] = useState<{ item?: Lote } | null>(null);
@@ -42,6 +46,10 @@ export default function Rebanho() {
   const [soAtivos, setSoAtivos] = useState(true);
 
   const ativos = animais.filter((a) => !a.saida_data);
+  const evolucao = new Map(animais.map((a) => [a.id, evolucaoPeso(a, pesagens)]));
+  const comGmd = ativos.map((a) => evolucao.get(a.id)!.gmd).filter((g): g is number => g !== null);
+  const gmdMedio = comGmd.length ? comGmd.reduce((s, g) => s + g, 0) / comGmd.length : null;
+  const brincoDe = (id: number) => animais.find((a) => a.id === id)?.brinco ?? '—';
   const lista = animais.filter(
     (a) => (!soAtivos || !a.saida_data) && (lote === null || a.lote_id === lote) && a.brinco.includes(busca.trim()),
   );
@@ -59,6 +67,11 @@ export default function Rebanho() {
         <Cartao rotulo="Machos" valor={numero(ativos.filter((a) => a.sexo === 'M').length)} />
         <Cartao rotulo="Fêmeas" valor={numero(ativos.filter((a) => a.sexo === 'F').length)} />
         <Cartao rotulo="Lotes" valor={numero(lotes.length)} />
+        <Cartao
+          rotulo="Ganho médio"
+          valor={gmdMedio === null ? '—' : kgDia(gmdMedio)}
+          detalhe={comGmd.length ? `${comGmd.length} animais pesados` : 'registre pesagens'}
+        />
       </Grade>
 
       <div className="flex flex-col gap-3">
@@ -85,21 +98,40 @@ export default function Rebanho() {
 
       <Secao titulo={`Animais (${lista.length})`} acao={<Botao titulo="+ Entrada" onClick={() => setFormAberto(true)} />}>
         {lista.length === 0 && <Vazio>Nenhum animal encontrado.</Vazio>}
-        {lista.map((a) => (
+        {lista.map((a) => {
+          const ev = evolucao.get(a.id)!;
+          return (
           <Linha
             key={a.id}
             marca={a.brinco}
             titulo={`${a.raca} · ${a.sexo === 'M' ? 'Macho' : 'Fêmea'}`}
-            subtitulo={`${nomeLote(lotes, a.lote_id)} · ${a.entrada_tipo} em ${diaMes(a.entrada_data)}`}
-            valor={a.saida_valor ? reais(a.saida_valor) : `${numero(a.entrada_peso)} kg`}
+            subtitulo={`${nomeLote(lotes, a.lote_id)} · ${a.entrada_tipo} em ${diaMes(a.entrada_data)}${ev.gmd !== null ? ` · ${kgDia(ev.gmd)}` : ''}`}
+            valor={a.saida_valor ? reais(a.saida_valor) : `${numero(ev.peso)} kg`}
             etiqueta={a.saida_tipo && <Etiqueta texto={SAIDA[a.saida_tipo]} tom={a.saida_tipo === 'morte' ? 'alerta' : 'neutro'} />}
             apagada={!!a.saida_data}
             onClick={() => setSelecionado(a)}
             dicaAcao="Abrir opções deste animal"
           />
+          );
+        })}
+      </Secao>
+      <p className="text-sm font-medium text-texto-2">
+        Clique em um animal para registrar pesagem, mover de lote, registrar a saída, editar ou excluir.
+      </p>
+
+      <Secao titulo="Últimas pesagens">
+        {pesagens.length === 0 && <Vazio>Nenhuma pesagem registrada. Abra um animal e escolha “Registrar pesagem”.</Vazio>}
+        {pesagens.slice(0, 15).map((p) => (
+          <Linha
+            key={p.id}
+            marca={diaMes(p.data)}
+            titulo={`Brinco ${brincoDe(p.animal_id)}`}
+            valor={`${numero(p.peso)} kg`}
+            onClick={() => setFormPesagem(p)}
+            dicaAcao="Editar ou excluir esta pesagem"
+          />
         ))}
       </Secao>
-      <p className="text-sm font-medium text-texto-2">Clique em um animal para mover de lote, registrar a saída, editar ou excluir.</p>
 
       <Secao titulo={`Lotes (${lotes.length})`} acao={<Botao titulo="+ Lote" onClick={() => setFormLote({})} />}>
         {lotes.length === 0 && <Vazio>Nenhum lote cadastrado. Comece por aqui: os animais entram em um lote.</Vazio>}
@@ -163,8 +195,20 @@ export default function Rebanho() {
               rotulo: 'O que fazer',
               tipo: 'opcoes',
               opcoes: selecionadoAtivo
-                ? [{ valor: 'mover', rotulo: 'Mover de lote' }, { valor: 'saida', rotulo: 'Registrar saída' }, { valor: 'editar', rotulo: 'Editar dados' }]
+                ? [
+                    { valor: 'pesar', rotulo: 'Registrar pesagem' },
+                    { valor: 'mover', rotulo: 'Mover de lote' },
+                    { valor: 'saida', rotulo: 'Registrar saída' },
+                    { valor: 'editar', rotulo: 'Editar dados' },
+                  ]
                 : [{ valor: 'editar', rotulo: 'Editar dados' }, { valor: 'desfazer', rotulo: 'Desfazer saída' }],
+            },
+            { chave: 'p_data', rotulo: 'Data da pesagem', tipo: 'data', quando: (v) => v.acao === 'pesar' },
+            {
+              chave: 'p_peso',
+              rotulo: `Peso (kg) — último: ${numero(evolucao.get(selecionado.id)!.peso)} kg em ${diaMes(evolucao.get(selecionado.id)!.data)}`,
+              tipo: 'numero',
+              quando: (v) => v.acao === 'pesar',
             },
             {
               chave: 'lote',
@@ -189,6 +233,7 @@ export default function Rebanho() {
             e_valor: selecionado.entrada_valor ? numParaTexto(selecionado.entrada_valor) : '',
           }}
           validar={(v) => {
+            if (v.acao === 'pesar' && v.p_data < selecionado.entrada_data) return `A pesagem não pode ser antes da entrada (${diaMes(selecionado.entrada_data)}).`;
             if (v.acao === 'mover' && !v.lote) return 'Não há outro lote para onde mover. Cadastre um lote primeiro.';
             if (v.acao === 'saida') {
               if (v.s_data < selecionado.entrada_data) return `A saída não pode ser antes da entrada (${diaMes(selecionado.entrada_data)}).`;
@@ -204,6 +249,7 @@ export default function Rebanho() {
           }}
           onSalvar={(v) => {
             const id = selecionado.id;
+            if (v.acao === 'pesar') return salvar('pesagens', { animal_id: id, data: v.p_data, peso: num(v.p_peso) });
             if (v.acao === 'mover') return salvar('animais', { id, lote_id: Number(v.lote) });
             if (v.acao === 'editar') return salvar('animais', { id, ...cadastro(v) });
             if (v.acao === 'desfazer') return salvar('animais', { id, saida_data: null, saida_tipo: null, saida_peso: null, saida_valor: null });
@@ -217,6 +263,24 @@ export default function Rebanho() {
           }}
           onExcluir={() => excluir('animais', selecionado.id)}
           onFechar={() => setSelecionado(null)}
+        />
+      )}
+
+      {formPesagem && (
+        <Formulario
+          titulo={`Pesagem do brinco ${brincoDe(formPesagem.animal_id)}`}
+          campos={[
+            { chave: 'data', rotulo: 'Data', tipo: 'data' },
+            { chave: 'peso', rotulo: 'Peso (kg)', tipo: 'numero' },
+          ]}
+          iniciais={{ data: formPesagem.data, peso: numParaTexto(formPesagem.peso) }}
+          validar={(v) => {
+            const animal = animais.find((a) => a.id === formPesagem.animal_id);
+            return animal && v.data < animal.entrada_data ? `A pesagem não pode ser antes da entrada (${diaMes(animal.entrada_data)}).` : null;
+          }}
+          onSalvar={(v) => salvar('pesagens', { id: formPesagem.id, data: v.data, peso: num(v.peso) })}
+          onExcluir={() => excluir('pesagens', formPesagem.id)}
+          onFechar={() => setFormPesagem(null)}
         />
       )}
     </Tela>

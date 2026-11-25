@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { Formulario } from '@/components/formulario';
+import { type Campo, Formulario, type Valores } from '@/components/formulario';
 import { Botao, Cartao, Chip, Chips, Etiqueta, Grade, Linha, Secao, Tela, Vazio } from '@/components/ui';
 import { CATEGORIAS, type Categoria, type Despesa, diaMes, excluir, mesIso, nomeMes, reais, type Recorrente, salvar, useDados } from '@/lib/dados';
 import { num, numParaTexto } from '@/lib/formato';
@@ -10,7 +10,45 @@ import { num, numParaTexto } from '@/lib/formato';
 const OPCOES_CATEGORIA = (Object.keys(CATEGORIAS) as Categoria[]).map((c) => ({ valor: c, rotulo: CATEGORIAS[c] }));
 
 export default function Financeiro() {
-  const { despesas, recorrentes, estoque } = useDados();
+  const { despesas, recorrentes, estoque, funcionarios, maquinas } = useDados();
+
+  // Funcionário (categoria Funcionários) e máquina (categoria Maquinário) ligados ao gasto. Só os ativos,
+  // mais o que já estiver ligado ao registro em edição.
+  const camposVinculo = (atual?: { funcionario_id?: number | null; maquina_id?: number | null }): Campo[] => [
+    {
+      chave: 'funcionario',
+      rotulo: 'Funcionário',
+      tipo: 'opcoes',
+      opcional: true,
+      opcoes: [
+        { valor: '', rotulo: 'Nenhum' },
+        ...funcionarios.filter((f) => f.ativo || f.id === atual?.funcionario_id).map((f) => ({ valor: String(f.id), rotulo: f.nome })),
+      ],
+      quando: (v) => v.categoria === 'funcionarios',
+    },
+    {
+      chave: 'maquina',
+      rotulo: 'Máquina',
+      tipo: 'opcoes',
+      opcional: true,
+      opcoes: [
+        { valor: '', rotulo: 'Nenhuma' },
+        ...maquinas.filter((m) => m.ativo || m.id === atual?.maquina_id).map((m) => ({ valor: String(m.id), rotulo: m.nome })),
+      ],
+      quando: (v) => v.categoria === 'maquinario',
+    },
+  ];
+  const vinculoInicial = (atual: { funcionario_id?: number | null; maquina_id?: number | null }) => ({
+    funcionario: atual.funcionario_id ? String(atual.funcionario_id) : '',
+    maquina: atual.maquina_id ? String(atual.maquina_id) : '',
+  });
+  // Escolha feita antes de trocar de categoria fica guardada no formulário; só vale na categoria certa.
+  const vinculo = (v: Valores) => ({
+    funcionario_id: v.categoria === 'funcionarios' && v.funcionario ? Number(v.funcionario) : null,
+    maquina_id: v.categoria === 'maquinario' && v.maquina ? Number(v.maquina) : null,
+  });
+  const nomeVinculo = (d: { funcionario_id?: number | null; maquina_id?: number | null }) =>
+    funcionarios.find((f) => f.id === d.funcionario_id)?.nome ?? maquinas.find((m) => m.id === d.maquina_id)?.nome;
   // { item } = editando aquele registro; {} = novo; null = fechado.
   const [formDespesa, setFormDespesa] = useState<{ item?: Despesa } | null>(null);
   const [formRecorrente, setFormRecorrente] = useState<{ item?: Recorrente } | null>(null);
@@ -53,7 +91,7 @@ export default function Financeiro() {
             key={d.id}
             marca={diaMes(d.data)}
             titulo={d.descricao}
-            subtitulo={CATEGORIAS[d.categoria]}
+            subtitulo={[CATEGORIAS[d.categoria], nomeVinculo(d)].filter(Boolean).join(' · ')}
             valor={reais(d.valor)}
             etiqueta={d.recorrente && <Etiqueta texto="Recorrente" />}
             onClick={() => setFormDespesa({ item: d })}
@@ -69,7 +107,7 @@ export default function Financeiro() {
             key={r.id}
             marca={`dia ${r.dia_vencimento}`}
             titulo={r.descricao}
-            subtitulo={CATEGORIAS[r.categoria]}
+            subtitulo={[CATEGORIAS[r.categoria], nomeVinculo(r)].filter(Boolean).join(' · ')}
             valor={reais(r.valor)}
             etiqueta={!r.ativo && <Etiqueta texto="Inativo" />}
             apagada={!r.ativo}
@@ -102,6 +140,7 @@ export default function Financeiro() {
               dica: 'Na unidade do insumo',
               quando: (v) => v.categoria === 'alimentacao' && v.insumo !== '',
             },
+            ...camposVinculo(formDespesa.item),
           ]}
           iniciais={
             formDespesa.item && {
@@ -111,6 +150,7 @@ export default function Financeiro() {
               valor: numParaTexto(formDespesa.item.valor),
               insumo: formDespesa.item.insumo_id ? String(formDespesa.item.insumo_id) : '',
               quantidade: formDespesa.item.quantidade ? numParaTexto(formDespesa.item.quantidade) : '',
+              ...vinculoInicial(formDespesa.item),
             }
           }
           onSalvar={(v) => {
@@ -124,6 +164,7 @@ export default function Financeiro() {
               valor: num(v.valor),
               insumo_id: compra ? Number(v.insumo) : null,
               quantidade: compra ? num(v.quantidade) : null,
+              ...vinculo(v),
             });
           }}
           onExcluir={formDespesa.item && (() => excluir('despesas', formDespesa.item!.id))}
@@ -140,6 +181,7 @@ export default function Financeiro() {
             { chave: 'valor', rotulo: 'Valor mensal (R$)', tipo: 'numero' },
             { chave: 'dia', rotulo: 'Dia do vencimento', tipo: 'numero', dica: '1 a 28' },
             { chave: 'ativo', rotulo: 'Situação', tipo: 'opcoes', opcoes: [{ valor: 'sim', rotulo: 'Ativo' }, { valor: 'nao', rotulo: 'Inativo' }] },
+            ...camposVinculo(formRecorrente.item),
           ]}
           iniciais={
             formRecorrente.item && {
@@ -148,6 +190,7 @@ export default function Financeiro() {
               valor: numParaTexto(formRecorrente.item.valor),
               dia: String(formRecorrente.item.dia_vencimento),
               ativo: formRecorrente.item.ativo ? 'sim' : 'nao',
+              ...vinculoInicial(formRecorrente.item),
             }
           }
           validar={(v) => {
@@ -162,6 +205,7 @@ export default function Financeiro() {
               valor: num(v.valor),
               dia_vencimento: num(v.dia),
               ativo: v.ativo === 'sim',
+              ...vinculo(v),
             })
           }
           onExcluir={formRecorrente.item && (() => excluir('recorrentes', formRecorrente.item!.id))}

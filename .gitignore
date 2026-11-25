@@ -20,3 +20,4 @@ npm-debug.log*
 
 # configuração pessoal do Claude Code
 .claude/settings.local.json
+.next-exemplo/

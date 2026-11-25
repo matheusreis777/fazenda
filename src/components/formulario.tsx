@@ -17,6 +17,8 @@ export type Campo = {
   opcoes?: { valor: string; rotulo: string }[];
   opcional?: boolean;
   dica?: string;
+  /** Para senhas: 'current-password' na senha atual (o padrão é 'new-password'). */
+  autoComplete?: string;
   /** Se informado, o campo só aparece (e só é validado) quando devolver true. */
   quando?: (valores: Valores) => boolean;
 };
@@ -59,7 +61,8 @@ export function Formulario({
 }) {
   const [valores, setValores] = useState<Valores>(() => ({
     ...Object.fromEntries(
-      campos.map((c) => [c.chave, c.tipo === 'data' ? hojeIso() : c.tipo === 'opcoes' ? (c.opcoes?.[0]?.valor ?? '') : '']),
+      // Data obrigatória começa em hoje; data opcional começa em branco.
+      campos.map((c) => [c.chave, c.tipo === 'data' && !c.opcional ? hojeIso() : c.tipo === 'opcoes' ? (c.opcoes?.[0]?.valor ?? '') : '']),
     ),
     ...iniciais,
   }));
@@ -153,7 +156,7 @@ export function Formulario({
                     className={clsx(CAMPO, erro && 'border-alerta')}
                     type={c.tipo === 'data' ? 'date' : c.tipo === 'senha' ? 'password' : c.tipo === 'email' ? 'email' : 'text'}
                     inputMode={c.tipo === 'numero' ? 'decimal' : undefined}
-                    autoComplete={c.tipo === 'senha' ? 'new-password' : 'off'}
+                    autoComplete={c.autoComplete ?? (c.tipo === 'senha' ? 'new-password' : 'off')}
                     autoCapitalize={c.tipo === 'senha' || c.tipo === 'email' ? 'none' : undefined}
                     placeholder={c.dica}
                     value={valores[c.chave]}
