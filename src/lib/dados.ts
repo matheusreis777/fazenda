@@ -363,6 +363,8 @@ export function proximosManejos(registros: Sanidade[], ate: string): Sanidade[] 
 export const nomeLote = (lotes: Lote[], id: number) => lotes.find((l) => l.id === id)?.nome ?? '—';
 export const reais = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 export const numero = (v: number) => v.toLocaleString('pt-BR');
+/** 12345 → '12,3 mil'; 1200000 → '1,2 mi'. Para números grandes caberem nos cartões. */
+export const numeroCurto = (v: number) => v.toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
 /** '2026-11-23' → '23/11' */
 export const diaMes = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
@@ -375,4 +377,20 @@ export function mesIso(deslocar = 0, de = new Date()): string {
 export function nomeMes(mes: string): string {
   const nome = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   return nome.charAt(0).toUpperCase() + nome.slice(1);
+}
+
+/**
+ * Cria um lote só com o nome, de dentro de outro formulário (ex.: cadastro de animal).
+ * Devolve o id do lote novo como texto (o valor da opção) ou a mensagem de erro.
+ */
+export async function criarLote(nome: string): Promise<{ valor: string } | { erro: string }> {
+  const limpo = nome.trim();
+  if (!limpo) return { erro: 'Digite o nome do lote.' };
+  const existente = dados.lotes.find((l) => l.nome.toLowerCase() === limpo.toLowerCase());
+  if (existente) return { valor: String(existente.id) };
+  const erro = await salvar('lotes', { nome: limpo, descricao: null });
+  if (erro) return { erro };
+  // O nome é único: acha o lote recém-criado por ele (vale no modo exemplo e no banco).
+  const novo = dados.lotes.find((l) => l.nome.toLowerCase() === limpo.toLowerCase());
+  return novo ? { valor: String(novo.id) } : { erro: 'O lote foi criado, mas não apareceu na lista. Feche e abra de novo.' };
 }

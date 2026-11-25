@@ -91,3 +91,13 @@ assert.deepEqual(manejos.map((m) => m.id), [3]);
 assert.equal(funcionarioEmUso(1), true);
 assert.equal(maquinaEmUso(2), true);
 console.log('OK: pesagens e sanidade');
+
+// Criar lote de dentro de outro formulário: devolve o id; nome repetido reaproveita o existente.
+const { criarLote } = await import('./dados.ts');
+const r1 = await criarLote('  Pasto Novo do Teste ');
+assert.ok('valor' in r1);
+assert.equal(lerDados().lotes.find((l) => String(l.id) === r1.valor).nome, 'Pasto Novo do Teste');
+const r2 = await criarLote('pasto novo do teste');
+assert.equal(r2.valor, r1.valor);
+assert.deepEqual(await criarLote('   '), { erro: 'Digite o nome do lote.' });
+console.log('OK: criar lote');
