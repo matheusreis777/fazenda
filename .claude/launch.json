@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fazenda",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev", "--port", "3100"],
+      "port": 3100
+    },
+    {
+      "name": "fazenda-exemplo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.NEXT_PUBLIC_MODO_EXEMPLO='1';require('child_process').spawn('npx',['next','dev','--port','3101'],{stdio:'inherit',shell:true})"
+      ],
+      "port": 3101
+    }
+  ]
+}
