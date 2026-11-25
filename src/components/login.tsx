@@ -127,7 +127,8 @@ export function Login() {
         <Botao
           tipo="submit"
           desabilitado={!pronto}
-          titulo={ocupado ? 'Aguarde…' : criando ? 'Criar conta' : 'Entrar'}
+          carregando={ocupado}
+          titulo={ocupado ? (criando ? 'Criando conta…' : 'Entrando…') : criando ? 'Criar conta' : 'Entrar'}
           className="rounded-xl py-3 text-base"
         />
 

@@ -3,14 +3,12 @@
 import { useState } from 'react';
 
 import { Formulario } from '@/components/formulario';
-import { Botao, Cartao, Etiqueta, Grade, Linha, Secao, Tela, Vazio } from '@/components/ui';
-import { excluir, type Funcionario, funcionarioEmUso, type Maquina, maquinaEmUso, numero, reais, salvar, useDados } from '@/lib/dados';
+import { Botao, Cartao, CartaoGrupo, contem, Etiqueta, Grade, Grupos, Linha, MenuAcoes, Secao, Tela, Topo, usePaginacao, Vazio, Voltar } from '@/components/ui';
+import { diaMes, excluir, type Funcionario, funcionarioEmUso, type Maquina, maquinaEmUso, numero, numeroCurto, reais, salvar, useDados } from '@/lib/dados';
 import { hojeIso, num, numParaTexto } from '@/lib/formato';
 
-const OPCOES_SITUACAO = [
-  { valor: 'sim', rotulo: 'Ativo' },
-  { valor: 'nao', rotulo: 'Inativo' },
-];
+/** O que a tela mostra: os cartões, um funcionário ou máquina, os que saíram ou as máquinas paradas. */
+type Vista = { tipo: 'inicio' } | { tipo: 'func'; id: number } | { tipo: 'maq'; id: number } | { tipo: 'saidos' } | { tipo: 'parados' };
 
 /** Funcionários e máquinas, com o quanto cada um custou (despesas ligadas a ele). */
 export default function Equipe() {
@@ -19,68 +17,213 @@ export default function Equipe() {
   const [formFunc, setFormFunc] = useState<{ item?: Funcionario } | null>(null);
   const [formMaq, setFormMaq] = useState<{ item?: Maquina } | null>(null);
 
+  const [escolhendo, setEscolhendo] = useState(false);
+  const [busca, setBusca] = useState('');
+  const [vista, setVista] = useState<Vista>({ tipo: 'inicio' });
+  const abrir = (v: Vista) => {
+    setVista(v);
+    setBusca('');
+  };
+  const voltar = () => abrir({ tipo: 'inicio' });
+
   const ano = hojeIso().slice(0, 4);
+  const soma = (xs: { valor: number }[]) => xs.reduce((s, d) => s + d.valor, 0);
   const doAno = despesas.filter((d) => d.data.startsWith(ano));
-  const gastoFunc = (id: number) => doAno.filter((d) => d.funcionario_id === id).reduce((s, d) => s + d.valor, 0);
-  const gastoMaq = (id: number) => doAno.filter((d) => d.maquina_id === id).reduce((s, d) => s + d.valor, 0);
+  const gastoFunc = (id: number) => soma(doAno.filter((d) => d.funcionario_id === id));
+  const gastoMaq = (id: number) => soma(doAno.filter((d) => d.maquina_id === id));
   const ativosFunc = funcionarios.filter((f) => f.ativo);
+  const ativasMaq = maquinas.filter((m) => m.ativo);
   const folha = ativosFunc.reduce((s, f) => s + (f.salario ?? 0), 0);
+
+  const termo = busca.trim();
+  const achaFunc = (f: Funcionario) => contem(f.nome, termo) || contem(f.funcao, termo);
+  const achaMaq = (m: Maquina) => contem(m.nome, termo) || contem(m.tipo, termo) || contem(m.identificacao, termo);
+  const pessoa = vista.tipo === 'func' ? funcionarios.find((f) => f.id === vista.id) : undefined;
+  const maquina = vista.tipo === 'maq' ? maquinas.find((m) => m.id === vista.id) : undefined;
+  const noInicio = !pessoa && !maquina && vista.tipo !== 'saidos' && vista.tipo !== 'parados';
+  // Gastos lançados no Financeiro com o funcionário ou a máquina aberta; a busca procura na descrição.
+  const ligados = despesas.filter((d) => (pessoa && d.funcionario_id === pessoa.id) || (maquina && d.maquina_id === maquina.id));
+  const listaGastos = ligados.filter((d) => contem(d.descricao, termo));
+
+  const linhaFunc = (f: Funcionario) => (
+    <Linha
+      key={`f${f.id}`}
+      titulo={f.nome}
+      subtitulo={[f.funcao, `${reais(gastoFunc(f.id))} em ${ano}`].filter(Boolean).join(' · ')}
+      etiqueta={!f.ativo && <Etiqueta texto="Saiu" />}
+      apagada={!f.ativo}
+      onClick={() => abrir({ tipo: 'func', id: f.id })}
+      dicaAcao="Ver os gastos deste funcionário"
+    />
+  );
+  const linhaMaq = (m: Maquina) => (
+    <Linha
+      key={`m${m.id}`}
+      titulo={m.nome}
+      subtitulo={[m.tipo, m.identificacao, `${reais(gastoMaq(m.id))} em ${ano}`].filter(Boolean).join(' · ')}
+      etiqueta={!m.ativo && <Etiqueta texto="Fora de uso" />}
+      apagada={!m.ativo}
+      onClick={() => abrir({ tipo: 'maq', id: m.id })}
+      dicaAcao="Ver os gastos desta máquina"
+    />
+  );
+  // Resultado da busca (funcionários e máquinas) ou a lista dos que saíram / estão parados.
+  const linhas = noInicio
+    ? termo
+      ? [...funcionarios.filter(achaFunc).map(linhaFunc), ...maquinas.filter(achaMaq).map(linhaMaq)]
+      : []
+    : vista.tipo === 'saidos'
+      ? funcionarios.filter((f) => !f.ativo && achaFunc(f)).map(linhaFunc)
+      : vista.tipo === 'parados'
+        ? maquinas.filter((m) => !m.ativo && achaMaq(m)).map(linhaMaq)
+        : [];
+  const pagLinhas = usePaginacao(linhas, [termo, vista]);
+  const pagGastos = usePaginacao(listaGastos, [termo, vista]);
+
+  const AVISO_FINANCEIRO = 'Para um gasto contar aqui, lance no Financeiro com a categoria Funcionários ou Maquinário e escolha de quem ou de qual máquina é.';
 
   return (
     <Tela>
-      <Grade>
-        <Cartao rotulo="Funcionários ativos" valor={numero(ativosFunc.length)} />
-        <Cartao rotulo="Folha mensal" valor={reais(folha)} detalhe="soma dos salários" />
-        <Cartao rotulo="Máquinas ativas" valor={numero(maquinas.filter((m) => m.ativo).length)} />
-        <Cartao rotulo={`Gasto com máquinas em ${ano}`} valor={reais(doAno.filter((d) => d.maquina_id).reduce((s, d) => s + d.valor, 0))} />
-      </Grade>
+      {/* ---------- Topo fixo: busca e cadastro ---------- */}
+      <Topo
+        busca={busca}
+        onBusca={setBusca}
+        dica={pessoa || maquina ? 'Procurar gasto' : 'Procurar nome, função ou máquina'}
+        novo="+ Cadastrar"
+        rotuloNovo="Cadastrar funcionário ou máquina"
+        onNovo={() => setEscolhendo(true)}>
+        {numero(ativosFunc.length)} {ativosFunc.length === 1 ? 'funcionário' : 'funcionários'} · salários {reais(folha)} por mês · {numero(ativasMaq.length)}{' '}
+        {ativasMaq.length === 1 ? 'máquina' : 'máquinas'} em uso
+      </Topo>
 
-      <Secao titulo="Funcionários" acao={<Botao titulo="+ Funcionário" onClick={() => setFormFunc({})} />}>
-        {funcionarios.length === 0 && <Vazio>Nenhum funcionário cadastrado.</Vazio>}
-        {funcionarios.map((f) => (
-          <Linha
-            key={f.id}
-            titulo={f.nome}
-            subtitulo={[f.funcao, f.telefone, `${reais(gastoFunc(f.id))} em ${ano}`].filter(Boolean).join(' · ')}
-            valor={f.salario ? reais(f.salario) : undefined}
-            etiqueta={!f.ativo && <Etiqueta texto="Inativo" />}
-            apagada={!f.ativo}
-            onClick={() => setFormFunc({ item: f })}
-            dicaAcao="Editar ou excluir este funcionário"
+      {noInicio && termo ? (
+        /* ---------- Resultado da busca ---------- */
+        <Secao titulo={`Encontrados com “${termo}” (${linhas.length})`} descricao="Toque para ver os gastos e mudar os dados." rodape={pagLinhas.controles}>
+          {linhas.length === 0 && <Vazio>Nenhum funcionário ou máquina com esse nome.</Vazio>}
+          {pagLinhas.itens}
+        </Secao>
+      ) : pessoa || maquina ? (
+        /* ---------- Um funcionário ou uma máquina ---------- */
+        <>
+          <Voltar
+            para="Equipe e máquinas"
+            onVoltar={voltar}
+            titulo={(pessoa ?? maquina)!.nome}
+            descricao={
+              (pessoa ? [pessoa.funcao, pessoa.telefone, !pessoa.ativo && 'já saiu'] : [maquina!.tipo, maquina!.identificacao, maquina!.ano && String(maquina!.ano), !maquina!.ativo && 'fora de uso'])
+                .filter(Boolean)
+                .join(' · ') || null
+            }
+            acao={<Botao titulo="Editar" secundario onClick={() => (pessoa ? setFormFunc({ item: pessoa }) : setFormMaq({ item: maquina }))} />}
           />
-        ))}
-      </Secao>
+          <Grade>
+            <Cartao rotulo={`Gasto em ${ano}`} valor={reais(pessoa ? gastoFunc(pessoa.id) : gastoMaq(maquina!.id))} />
+            <Cartao rotulo="Gasto total" valor={reais(soma(ligados))} detalhe={`${numero(ligados.length)} lançamentos`} />
+            {pessoa && <Cartao rotulo="Salário" valor={pessoa.salario ? reais(pessoa.salario) : '—'} detalhe="por mês" />}
+          </Grade>
+          <Secao titulo={`Gastos (${listaGastos.length})`} descricao={`${AVISO_FINANCEIRO} Para corrigir um gasto, vá ao Financeiro.`} rodape={pagGastos.controles}>
+            {listaGastos.length === 0 && <Vazio>{ligados.length === 0 ? 'Nenhum gasto ligado ainda.' : 'Nenhum gasto com esse nome.'}</Vazio>}
+            {pagGastos.itens.map((d) => (
+              <Linha key={d.id} marca={`${diaMes(d.data)}/${d.data.slice(2, 4)}`} titulo={d.descricao} valor={reais(d.valor)} etiqueta={d.recorrente && <Etiqueta texto="Fixo" />} />
+            ))}
+          </Secao>
+        </>
+      ) : vista.tipo === 'saidos' || vista.tipo === 'parados' ? (
+        /* ---------- Quem saiu / máquinas paradas ---------- */
+        <>
+          <Voltar para="Equipe e máquinas" onVoltar={voltar} />
+          <Secao
+            titulo={vista.tipo === 'saidos' ? `Funcionários que saíram (${linhas.length})` : `Máquinas fora de uso (${linhas.length})`}
+            descricao="O histórico de gastos fica guardado. Toque para ver ou mudar os dados."
+            rodape={pagLinhas.controles}>
+            {linhas.length === 0 && <Vazio>{vista.tipo === 'saidos' ? 'Nenhum funcionário saiu.' : 'Nenhuma máquina fora de uso.'}</Vazio>}
+            {pagLinhas.itens}
+          </Secao>
+        </>
+      ) : (
+        /* ---------- Início: um cartão por funcionário e por máquina ---------- */
+        <>
+          <Grupos titulo="Funcionários" vazio={ativosFunc.length === 0 && 'Nenhum funcionário trabalhando.'} novo="+ Novo funcionário" onNovo={() => setFormFunc({})}>
+            {ativosFunc.map((f) => (
+              <CartaoGrupo
+                key={f.id}
+                titulo={f.nome}
+                valor={numeroCurto(gastoFunc(f.id))}
+                unidade={`reais em ${ano}`}
+                detalhes={[f.funcao, !!f.salario && `salário ${reais(f.salario)}`]}
+                onClick={() => abrir({ tipo: 'func', id: f.id })}
+              />
+            ))}
+          </Grupos>
 
-      <Secao titulo="Máquinas" acao={<Botao titulo="+ Máquina" onClick={() => setFormMaq({})} />}>
-        {maquinas.length === 0 && <Vazio>Nenhuma máquina cadastrada.</Vazio>}
-        {maquinas.map((m) => (
-          <Linha
-            key={m.id}
-            titulo={m.nome}
-            subtitulo={[m.tipo, m.identificacao, m.ano && String(m.ano)].filter(Boolean).join(' · ') || undefined}
-            valor={reais(gastoMaq(m.id))}
-            etiqueta={m.ativo ? <Etiqueta texto={`gasto em ${ano}`} /> : <Etiqueta texto="Inativa" />}
-            apagada={!m.ativo}
-            onClick={() => setFormMaq({ item: m })}
-            dicaAcao="Editar ou excluir esta máquina"
-          />
-        ))}
-      </Secao>
-      <p className="text-sm font-medium text-texto-2">
-        Para ligar um gasto a um funcionário ou a uma máquina, escolha-o ao lançar a despesa no Financeiro (categorias
-        Funcionários e Maquinário).
-      </p>
+          <Grupos titulo="Máquinas e veículos" vazio={ativasMaq.length === 0 && 'Nenhuma máquina em uso.'} novo="+ Nova máquina" onNovo={() => setFormMaq({})}>
+            {ativasMaq.map((m) => (
+              <CartaoGrupo
+                key={m.id}
+                titulo={m.nome}
+                valor={numeroCurto(gastoMaq(m.id))}
+                unidade={`reais em ${ano}`}
+                detalhes={[[m.tipo, m.identificacao].filter(Boolean).join(' · ')]}
+                onClick={() => abrir({ tipo: 'maq', id: m.id })}
+              />
+            ))}
+          </Grupos>
+
+          <Secao titulo="Mais">
+            <Linha
+              titulo="Funcionários que saíram"
+              subtitulo="O histórico fica guardado"
+              valor={numero(funcionarios.length - ativosFunc.length)}
+              onClick={() => abrir({ tipo: 'saidos' })}
+              dicaAcao="Ver os funcionários que saíram"
+            />
+            <Linha
+              titulo="Máquinas fora de uso"
+              subtitulo="Vendidas ou paradas"
+              valor={numero(maquinas.length - ativasMaq.length)}
+              onClick={() => abrir({ tipo: 'parados' })}
+              dicaAcao="Ver as máquinas fora de uso"
+            />
+          </Secao>
+          <p className="text-sm font-medium text-texto-2">{AVISO_FINANCEIRO}</p>
+        </>
+      )}
+
+      {escolhendo && (
+        <MenuAcoes
+          titulo="O que vai cadastrar?"
+          onFechar={() => setEscolhendo(false)}
+          acoes={[
+            { titulo: 'Funcionário', descricao: 'Uma pessoa que trabalha na fazenda.', onClick: () => (setEscolhendo(false), setFormFunc({})) },
+            { titulo: 'Máquina ou veículo', descricao: 'Trator, caminhonete, roçadeira…', onClick: () => (setEscolhendo(false), setFormMaq({})) },
+          ]}
+        />
+      )}
 
       {formFunc && (
         <Formulario
-          titulo={formFunc.item ? 'Editar funcionário' : 'Novo funcionário'}
+          titulo={formFunc.item ? formFunc.item.nome : 'Novo funcionário'}
           campos={[
-            { chave: 'nome', rotulo: 'Nome' },
-            { chave: 'funcao', rotulo: 'Função', opcional: true, dica: 'Ex.: Vaqueiro, Tratorista' },
-            { chave: 'telefone', rotulo: 'Telefone', opcional: true },
-            { chave: 'salario', rotulo: 'Salário (R$)', tipo: 'numero', opcional: true },
-            { chave: 'admissao', rotulo: 'Admissão', tipo: 'data', opcional: true },
-            { chave: 'ativo', rotulo: 'Situação', tipo: 'opcoes', opcoes: OPCOES_SITUACAO },
+            { chave: 'nome', rotulo: 'Nome completo' },
+            { chave: 'funcao', rotulo: 'O que faz', opcional: true, dica: 'Ex.: Vaqueiro, Tratorista' },
+            { chave: 'telefone', rotulo: 'Telefone', opcional: true, dica: 'Ex.: (64) 99999-0000' },
+            {
+              chave: 'salario',
+              rotulo: 'Salário (R$)',
+              tipo: 'numero',
+              opcional: true,
+              ajuda: 'Só para consulta. Para o salário entrar nos gastos todo mês, cadastre um gasto fixo no Financeiro.',
+            },
+            { chave: 'admissao', rotulo: 'Data em que começou', tipo: 'data', opcional: true },
+            {
+              chave: 'ativo',
+              rotulo: 'Trabalha aqui hoje?',
+              tipo: 'opcoes',
+              opcoes: [
+                { valor: 'sim', rotulo: 'Sim' },
+                { valor: 'nao', rotulo: 'Não, já saiu' },
+              ],
+            },
           ]}
           iniciais={
             formFunc.item && {
@@ -107,23 +250,35 @@ export default function Equipe() {
             formFunc.item &&
             (() => {
               const { id } = formFunc.item!;
-              if (funcionarioEmUso(id)) return 'Este funcionário tem despesas ligadas a ele. Para não perder o histórico, marque como inativo.';
+              if (funcionarioEmUso(id)) return 'Não dá para excluir: há gastos ligados a este funcionário. Se ele saiu, marque “Não, já saiu” e salve.';
+              voltar();
               return excluir('funcionarios', id);
             })
           }
+          salvarTexto={formFunc.item ? 'Salvar alterações' : 'Cadastrar funcionário'}
+          sucesso={formFunc.item ? 'Funcionário atualizado.' : 'Funcionário cadastrado.'}
+          excluirTexto="Excluir funcionário"
           onFechar={() => setFormFunc(null)}
         />
       )}
 
       {formMaq && (
         <Formulario
-          titulo={formMaq.item ? 'Editar máquina' : 'Nova máquina'}
+          titulo={formMaq.item ? formMaq.item.nome : 'Nova máquina'}
           campos={[
-            { chave: 'nome', rotulo: 'Nome', dica: 'Ex.: Trator azul' },
-            { chave: 'tipo', rotulo: 'Tipo', opcional: true, dica: 'Ex.: Trator, Implemento, Caminhonete' },
-            { chave: 'identificacao', rotulo: 'Modelo / placa / série', opcional: true },
-            { chave: 'ano', rotulo: 'Ano', tipo: 'numero', opcional: true },
-            { chave: 'ativo', rotulo: 'Situação', tipo: 'opcoes', opcoes: OPCOES_SITUACAO },
+            { chave: 'nome', rotulo: 'Nome', dica: 'Ex.: Trator azul', ajuda: 'Como vocês chamam a máquina no dia a dia.' },
+            { chave: 'tipo', rotulo: 'Tipo', opcional: true, dica: 'Ex.: Trator, Caminhonete, Roçadeira' },
+            { chave: 'identificacao', rotulo: 'Modelo ou placa', opcional: true, dica: 'Ex.: Massey Ferguson 4275' },
+            { chave: 'ano', rotulo: 'Ano', tipo: 'numero', opcional: true, dica: 'Ex.: 2015' },
+            {
+              chave: 'ativo',
+              rotulo: 'Está em uso?',
+              tipo: 'opcoes',
+              opcoes: [
+                { valor: 'sim', rotulo: 'Sim' },
+                { valor: 'nao', rotulo: 'Não, foi vendida ou parou' },
+              ],
+            },
           ]}
           iniciais={
             formMaq.item && {
@@ -153,10 +308,14 @@ export default function Equipe() {
             formMaq.item &&
             (() => {
               const { id } = formMaq.item!;
-              if (maquinaEmUso(id)) return 'Esta máquina tem despesas ligadas a ela. Para não perder o histórico, marque como inativa.';
+              if (maquinaEmUso(id)) return 'Não dá para excluir: há gastos ligados a esta máquina. Se parou de usar, marque “Não” em “Está em uso?” e salve.';
+              voltar();
               return excluir('maquinas', id);
             })
           }
+          salvarTexto={formMaq.item ? 'Salvar alterações' : 'Cadastrar máquina'}
+          sucesso={formMaq.item ? 'Máquina atualizada.' : 'Máquina cadastrada.'}
+          excluirTexto="Excluir máquina"
           onFechar={() => setFormMaq(null)}
         />
       )}

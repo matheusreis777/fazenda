@@ -8,7 +8,7 @@ import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react
 
 import { Formulario } from '@/components/formulario';
 import { Login } from '@/components/login';
-import { Botao, Icone, type NomeIcone } from '@/components/ui';
+import { Avisos, Botao, Girando, Icone, type NomeIcone } from '@/components/ui';
 import { carregar, ligarBanco } from '@/lib/banco';
 import { SENHA_MINIMA, trocarSenha } from '@/lib/conta';
 import { BASE_VAZIA, definir, useDados } from '@/lib/dados';
@@ -47,7 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const [trocandoSenha, setTrocandoSenha] = useState(false);
   const [maisAberto, setMaisAberto] = useState(false);
-  const [avisoSenha, setAvisoSenha] = useState(false);
+  const [saindo, setSaindo] = useState(false);
 
   // undefined = ainda lendo a sessão salva; null = sem login.
   const [sessao, setSessao] = useState<Session | null | undefined>(supabaseConfigurado ? undefined : null);
@@ -68,7 +68,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (!montado) return null;
 
-  const sair = () => void supabase.auth.signOut();
+  // Devolve a promessa: o Botao mostra a rodinha até terminar.
+  const sair = () => {
+    setSaindo(true);
+    return supabase.auth.signOut().finally(() => setSaindo(false));
+  };
 
   if (supabaseConfigurado) {
     if (sessao === undefined) return null;
@@ -76,8 +80,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!carregado) {
       return (
         <Centro>
-          <p role="status" className="font-medium text-texto-2">
-            Carregando…
+          <p role="status" className="flex items-center gap-3 font-medium text-texto-2">
+            <Girando className="size-6" />
+            Carregando os dados da fazenda…
           </p>
         </Centro>
       );
@@ -90,7 +95,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             Sua conta ({sessao.user.email}) foi criada, mas ainda não tem acesso aos dados da fazenda. Peça ao responsável
             para aprovar e depois clique em “Verificar de novo”.
           </p>
-          <Botao titulo="Verificar de novo" onClick={() => void carregar()} />
+          <Botao titulo="Verificar de novo" onClick={carregar} />
           <Botao titulo="Sair" secundario onClick={sair} />
         </Centro>
       );
@@ -99,7 +104,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       return (
         <Centro>
           <p className="max-w-md font-medium">{erro}</p>
-          <Botao titulo="Tentar de novo" onClick={() => void carregar()} />
+          <Botao titulo="Tentar de novo" onClick={carregar} />
           <Botao titulo="Sair" secundario onClick={sair} />
         </Centro>
       );
@@ -153,8 +158,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className="hidden cursor-pointer text-sm font-bold text-texto-2 hover:opacity-80 md:inline">
                   Trocar senha
                 </button>
-                <button type="button" onClick={sair} className="cursor-pointer text-sm font-bold text-texto-2 hover:opacity-80">
-                  Sair
+                <button
+                  type="button"
+                  onClick={() => void sair()}
+                  disabled={saindo}
+                  aria-busy={saindo || undefined}
+                  className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-texto-2 hover:opacity-80 disabled:cursor-wait">
+                  {saindo && <Girando />}
+                  {saindo ? 'Saindo…' : 'Sair'}
                 </button>
               </>
             )}
@@ -228,7 +239,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           titulo="Trocar senha"
           campos={[
             { chave: 'atual', rotulo: 'Senha atual', tipo: 'senha', autoComplete: 'current-password' },
-            { chave: 'nova', rotulo: 'Nova senha', tipo: 'senha', dica: `Mínimo ${SENHA_MINIMA} caracteres` },
+            { chave: 'nova', rotulo: 'Nova senha', tipo: 'senha', ajuda: `Pelo menos ${SENHA_MINIMA} letras ou números.` },
             { chave: 'repetir', rotulo: 'Repita a nova senha', tipo: 'senha' },
           ]}
           validar={(v) => {
@@ -236,24 +247,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             if (v.nova !== v.repetir) return 'As duas senhas novas não são iguais.';
             return null;
           }}
-          onSalvar={async (v) => {
-            const erro = await trocarSenha(v.atual, v.nova);
-            if (!erro) setAvisoSenha(true);
-            return erro;
-          }}
+          onSalvar={(v) => trocarSenha(v.atual, v.nova)}
+          salvarTexto="Trocar senha"
+          sucesso="Senha trocada."
           onFechar={() => setTrocandoSenha(false)}
         />
       )}
-      {avisoSenha && (
-        <div role="status" className="fixed inset-x-0 bottom-20 z-50 flex justify-center px-4 md:bottom-6">
-          <button
-            type="button"
-            onClick={() => setAvisoSenha(false)}
-            className="cursor-pointer rounded-full bg-primaria px-5 py-3 text-sm font-bold text-sobre-primaria shadow-lg">
-            Senha trocada. ✕
-          </button>
-        </div>
-      )}
+      <Avisos />
     </div>
   );
 }

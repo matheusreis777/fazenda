@@ -50,6 +50,16 @@
   --color-alerta-suave: var(--alerta-suave);
 }
 
+/* Formulários entram deslizando pela direita (classe animate-gaveta). */
+@theme {
+  --animate-gaveta: gaveta 200ms ease-out;
+  @keyframes gaveta {
+    from {
+      transform: translateX(100%);
+    }
+  }
+}
+
 body {
   background: var(--fundo);
   color: var(--texto);

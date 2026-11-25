@@ -3,24 +3,32 @@
 import { useState } from 'react';
 
 import { type Campo, Formulario, type Valores } from '@/components/formulario';
-import { Botao, CAMPO, Cartao, Chip, Chips, Etiqueta, Grade, Icone, Linha, Secao, Tela, Vazio } from '@/components/ui';
-import { type Animal, diaMes, evolucaoPeso, excluir, type Lote, loteEmUso, nomeLote, numero, type Pesagem, reais, salvar, useDados } from '@/lib/dados';
-import { num, numParaTexto } from '@/lib/formato';
+import { Botao, Cartao, CartaoGrupo, Confirmacao, Etiqueta, Grade, Grupos, Linha, MenuAcoes, Opcoes, Secao, Tela, Topo, usePaginacao, Vazio, Voltar } from '@/components/ui';
+import { type Animal, criarLote, diaMes, evolucaoPeso, excluir, type Lote, loteEmUso, nomeLote, numero, type Pesagem, reais, salvar, useDados } from '@/lib/dados';
+import { num, numParaTexto, textoPeso } from '@/lib/formato';
 
-const SAIDA = { venda: 'Vendido', morte: 'Morte', abate: 'Abate' } as const;
+const SAIDA = { venda: 'Vendido', morte: 'Morreu', abate: 'Abatido' } as const;
 
-/** 0,8123 → '0,81 kg/dia' */
+/** 0,8123 → '0,81 kg por dia' */
 const kgDia = (gmd: number) => `${gmd.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg/dia`;
 
-/** Dados de cadastro do animal: usados na entrada (novo) e em "Editar dados". */
+/** Dados de cadastro do animal: usados no cadastro (novo) e em "Corrigir dados". */
 const CAMPOS_CADASTRO: Campo[] = [
-  { chave: 'brinco', rotulo: 'Brinco', dica: 'Ex.: 0107' },
+  { chave: 'brinco', rotulo: 'Número do brinco', dica: 'Ex.: 0107', ajuda: 'O número da etiqueta na orelha do animal.' },
   { chave: 'sexo', rotulo: 'Sexo', tipo: 'opcoes', opcoes: [{ valor: 'M', rotulo: 'Macho' }, { valor: 'F', rotulo: 'Fêmea' }] },
   { chave: 'raca', rotulo: 'Raça', dica: 'Ex.: Nelore' },
-  { chave: 'e_tipo', rotulo: 'Tipo de entrada', tipo: 'opcoes', opcoes: [{ valor: 'compra', rotulo: 'Compra' }, { valor: 'nascimento', rotulo: 'Nascimento' }] },
-  { chave: 'e_data', rotulo: 'Data da entrada', tipo: 'data' },
-  { chave: 'e_peso', rotulo: 'Peso na entrada (kg)', tipo: 'numero' },
-  { chave: 'e_valor', rotulo: 'Valor pago (R$)', tipo: 'numero', opcional: true },
+  {
+    chave: 'e_tipo',
+    rotulo: 'Como o animal chegou',
+    tipo: 'opcoes',
+    opcoes: [
+      { valor: 'compra', rotulo: 'Comprado' },
+      { valor: 'nascimento', rotulo: 'Nasceu na fazenda' },
+    ],
+  },
+  { chave: 'e_data', rotulo: 'Data em que chegou ou nasceu', tipo: 'data' },
+  { chave: 'e_peso', rotulo: 'Peso nesse dia', tipo: 'peso', dica: 'Ex.: 210', ajuda: 'Em quilos ou em arrobas (@). Se não pesou, coloque um peso aproximado.' },
+  { chave: 'e_valor', rotulo: 'Quanto pagou (R$)', tipo: 'numero', opcional: true, dica: 'Ex.: 3200', ajuda: 'Deixe em branco se nasceu na fazenda.' },
 ];
 
 const cadastro = (v: Valores) => ({
@@ -33,254 +41,455 @@ const cadastro = (v: Valores) => ({
   entrada_valor: v.e_valor.trim() ? num(v.e_valor) : null,
 });
 
+/** O que está aberto na tela: o menu do animal, um dos formulários dele, ou nada. */
+type Aberto =
+  | { tela: 'menu' | 'pesar' | 'mover' | 'saida' | 'corrigir' | 'desfazer' | 'excluir'; animal: Animal }
+  | { tela: 'novo'; lote?: number }
+  | { tela: 'lote'; lote?: Lote }
+  | { tela: 'pesagem'; pesagem: Pesagem }
+  | null;
+
+/** O que a tela mostra: os cartões dos lotes, os animais de um lote, os que saíram ou as pesagens. */
+type Vista = { tipo: 'lotes' } | { tipo: 'lote'; id: number } | { tipo: 'saidas' } | { tipo: 'pesagens' };
+
+const media = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
+
 export default function Rebanho() {
   const { lotes, animais, pesagens } = useDados();
-  const [formPesagem, setFormPesagem] = useState<Pesagem | null>(null);
-  const opcoesLote = lotes.map((l) => ({ valor: String(l.id), rotulo: l.nome }));
-  // { item } = editando aquele lote; {} = novo; null = fechado.
-  const [formLote, setFormLote] = useState<{ item?: Lote } | null>(null);
-  const [formAberto, setFormAberto] = useState(false);
-  const [selecionado, setSelecionado] = useState<Animal | null>(null);
+  const [aberto, setAberto] = useState<Aberto>(null);
+  const fechar = () => setAberto(null);
   const [busca, setBusca] = useState('');
-  const [lote, setLote] = useState<number | null>(null);
-  const [soAtivos, setSoAtivos] = useState(true);
+  const [vista, setVista] = useState<Vista>({ tipo: 'lotes' });
+  const voltar = () => abrir({ tipo: 'lotes' });
 
+  const opcoesLote = lotes.map((l) => ({ valor: String(l.id), rotulo: l.nome }));
   const ativos = animais.filter((a) => !a.saida_data);
+  const saidos = animais.filter((a) => a.saida_data).sort((a, b) => b.saida_data!.localeCompare(a.saida_data!));
   const evolucao = new Map(animais.map((a) => [a.id, evolucaoPeso(a, pesagens)]));
-  const comGmd = ativos.map((a) => evolucao.get(a.id)!.gmd).filter((g): g is number => g !== null);
-  const gmdMedio = comGmd.length ? comGmd.reduce((s, g) => s + g, 0) / comGmd.length : null;
   const brincoDe = (id: number) => animais.find((a) => a.id === id)?.brinco ?? '—';
-  const lista = animais.filter(
-    (a) => (!soAtivos || !a.saida_data) && (lote === null || a.lote_id === lote) && a.brinco.includes(busca.trim()),
-  );
+
+  /** Cabeças, peso médio e ganho médio por dia de um grupo de animais. */
+  const resumoGrupo = (grupo: Animal[]) => ({
+    cabecas: grupo.length,
+    peso: media(grupo.map((a) => evolucao.get(a.id)!.peso)),
+    gmd: media(grupo.map((a) => evolucao.get(a.id)!.gmd).filter((g): g is number => g !== null)),
+  });
+  const geral = resumoGrupo(ativos);
+
+  const termo = busca.trim();
+  const [sexo, setSexo] = useState<'' | 'M' | 'F'>('');
+  const [tipoSaida, setTipoSaida] = useState<'' | keyof typeof SAIDA>('');
+  const loteAberto = vista.tipo === 'lote' ? lotes.find((l) => l.id === vista.id) : undefined;
+  const noInicio = !loteAberto && vista.tipo !== 'saidas' && vista.tipo !== 'pesagens';
+  const temBrinco = (a: Animal) => a.brinco.includes(termo);
+  // Na tela dos lotes a busca vale para o rebanho todo; dentro de uma lista, filtra só aquela lista.
+  const doLote = loteAberto ? ativos.filter((a) => a.lote_id === loteAberto.id) : [];
+  const lista = noInicio
+    ? termo
+      ? animais.filter(temBrinco)
+      : []
+    : loteAberto
+      ? doLote.filter((a) => temBrinco(a) && (sexo === '' || a.sexo === sexo))
+      : vista.tipo === 'saidas'
+        ? saidos.filter((a) => temBrinco(a) && (tipoSaida === '' || a.saida_tipo === tipoSaida))
+        : [];
+  const listaPesagens = pesagens.filter((p) => brincoDe(p.animal_id).includes(termo));
+  const pagLista = usePaginacao(lista, [termo, vista, sexo, tipoSaida]);
+  const pagPesagens = usePaginacao(listaPesagens, termo);
+  const abrir = (v: Vista) => {
+    setVista(v);
+    setBusca('');
+    setSexo('');
+    setTipoSaida('');
+  };
 
   /** Brinco já usado por outro animal ativo (o banco tem a mesma regra). */
   const brincoEmUso = (brinco: string, ignorarId?: number) =>
-    ativos.some((a) => a.brinco === brinco.trim() && a.id !== ignorarId) ? `Já existe um animal ativo com o brinco ${brinco.trim()}.` : null;
+    ativos.some((a) => a.brinco === brinco.trim() && a.id !== ignorarId) ? `Já existe um animal no rebanho com o brinco ${brinco.trim()}.` : null;
 
-  const selecionadoAtivo = !selecionado?.saida_data;
+  /** "Nelore · Macho · Pasto da Sede · 352 kg" */
+  const resumo = (a: Animal) =>
+    [a.raca, a.sexo === 'M' ? 'Macho' : 'Fêmea', nomeLote(lotes, a.lote_id), textoPeso(evolucao.get(a.id)!.peso)].filter(Boolean).join(' · ');
+
+  const linhaAnimal = (a: Animal, mostrarLote: boolean) => {
+    const ev = evolucao.get(a.id)!;
+    const detalhes = [mostrarLote && nomeLote(lotes, a.lote_id), a.saida_data ? `saiu em ${diaMes(a.saida_data)}` : ev.gmd !== null && `ganhando ${kgDia(ev.gmd)}`];
+    return (
+      <Linha
+        key={a.id}
+        marca={a.brinco}
+        titulo={`${a.raca || 'Sem raça'} · ${a.sexo === 'M' ? 'Macho' : 'Fêmea'}`}
+        subtitulo={detalhes.filter(Boolean).join(' · ') || undefined}
+        valor={a.saida_valor ? reais(a.saida_valor) : textoPeso(ev.peso)}
+        etiqueta={a.saida_tipo && <Etiqueta texto={SAIDA[a.saida_tipo]} tom={a.saida_tipo === 'morte' ? 'alerta' : 'neutro'} />}
+        apagada={!!a.saida_data}
+        onClick={() => setAberto({ tela: 'menu', animal: a })}
+        dicaAcao="Ver o que dá para fazer com este animal"
+      />
+    );
+  };
+
+  const botaoVoltar = <Voltar para="Todos os lotes" onVoltar={voltar} />;
 
   return (
     <Tela>
-      <Grade>
-        <Cartao rotulo="Ativos" valor={numero(ativos.length)} />
-        <Cartao rotulo="Machos" valor={numero(ativos.filter((a) => a.sexo === 'M').length)} />
-        <Cartao rotulo="Fêmeas" valor={numero(ativos.filter((a) => a.sexo === 'F').length)} />
-        <Cartao rotulo="Lotes" valor={numero(lotes.length)} />
-        <Cartao
-          rotulo="Ganho médio"
-          valor={gmdMedio === null ? '—' : kgDia(gmdMedio)}
-          detalhe={comGmd.length ? `${comGmd.length} animais pesados` : 'registre pesagens'}
+      {/* ---------- Topo fixo: busca por brinco e cadastro ---------- */}
+      <Topo busca={busca} onBusca={setBusca} numerico dica="Procurar brinco" novo="+ Animal" rotuloNovo="Cadastrar animal" onNovo={() => setAberto({ tela: 'novo', lote: loteAberto?.id })}>
+        {numero(geral.cabecas)} cabeças em {numero(lotes.length)} {lotes.length === 1 ? 'lote' : 'lotes'}
+        {geral.gmd !== null && ` · ganho médio ${kgDia(geral.gmd)}`}
+      </Topo>
+
+      {noInicio && termo ? (
+        /* ---------- Resultado da busca ---------- */
+        <Secao titulo={`Brincos com “${termo}” (${lista.length})`} descricao="Toque no animal para ver o que dá para fazer." rodape={pagLista.controles}>
+          {lista.length === 0 && <Vazio>Nenhum animal com esse brinco.</Vazio>}
+          {pagLista.itens.map((a) => linhaAnimal(a, true))}
+        </Secao>
+      ) : loteAberto ? (
+        /* ---------- Dentro de um lote ---------- */
+        <>
+          <Voltar
+            para="Todos os lotes"
+            onVoltar={voltar}
+            titulo={loteAberto.nome}
+            descricao={loteAberto.descricao}
+            acao={<Botao titulo="Editar lote" secundario onClick={() => setAberto({ tela: 'lote', lote: loteAberto })} />}
+          />
+          {(() => {
+            const r = resumoGrupo(doLote);
+            return (
+              <Grade>
+                <Cartao rotulo="Cabeças" valor={numero(r.cabecas)} />
+                <Cartao rotulo="Peso médio" valor={r.peso === null ? '—' : textoPeso(r.peso)} />
+                <Cartao rotulo="Ganho por dia" valor={r.gmd === null ? '—' : kgDia(r.gmd)} detalhe={r.gmd === null ? 'registre pesagens para ver' : 'média do lote'} />
+              </Grade>
+            );
+          })()}
+          <Secao
+            titulo={`Animais (${lista.length})`}
+            descricao="Toque em um animal para pesar, mudar de lote ou registrar a venda."
+            acao={<Botao titulo="+ Animal neste lote" onClick={() => setAberto({ tela: 'novo', lote: loteAberto.id })} />}
+            filtros={
+              doLote.length > 0 && (
+                <Opcoes
+                  rotulo="Filtrar por sexo"
+                  valor={sexo}
+                  onMudar={setSexo}
+                  opcoes={[
+                    { valor: '', rotulo: 'Todos' },
+                    { valor: 'M', rotulo: `Machos (${doLote.filter((a) => a.sexo === 'M').length})` },
+                    { valor: 'F', rotulo: `Fêmeas (${doLote.filter((a) => a.sexo === 'F').length})` },
+                  ]}
+                />
+              )
+            }
+            rodape={pagLista.controles}>
+            {lista.length === 0 && (
+              <Vazio>{doLote.length === 0 ? 'Nenhum animal neste lote. Toque em “+ Animal neste lote” ou mude animais de outro lote para cá.' : 'Nenhum animal com esse filtro.'}</Vazio>
+            )}
+            {pagLista.itens.map((a) => linhaAnimal(a, false))}
+          </Secao>
+        </>
+      ) : vista.tipo === 'saidas' ? (
+        /* ---------- Vendidos, abatidos e mortos ---------- */
+        <>
+          {botaoVoltar}
+          <Secao
+            titulo={`Animais que saíram (${lista.length})`}
+            descricao="Vendidos, abatidos e mortos. Toque para desfazer uma saída lançada por engano."
+            filtros={
+              saidos.length > 0 && (
+                <Opcoes
+                  rotulo="Filtrar por tipo de saída"
+                  valor={tipoSaida}
+                  onMudar={setTipoSaida}
+                  opcoes={[
+                    { valor: '', rotulo: 'Todos' },
+                    { valor: 'venda', rotulo: 'Vendidos' },
+                    { valor: 'abate', rotulo: 'Abatidos' },
+                    { valor: 'morte', rotulo: 'Morreram' },
+                  ]}
+                />
+              )
+            }
+            rodape={pagLista.controles}>
+            {lista.length === 0 && <Vazio>{saidos.length === 0 ? 'Nenhum animal saiu do rebanho ainda.' : 'Nenhum animal com esse filtro.'}</Vazio>}
+            {pagLista.itens.map((a) => linhaAnimal(a, true))}
+          </Secao>
+        </>
+      ) : vista.tipo === 'pesagens' ? (
+        /* ---------- Histórico de pesagens ---------- */
+        <>
+          {botaoVoltar}
+          <Secao titulo={`Pesagens (${listaPesagens.length})`} descricao="Para pesar, toque no animal. Aqui você corrige ou apaga uma pesagem. Use a busca no topo para ver as de um brinco." rodape={pagPesagens.controles}>
+            {listaPesagens.length === 0 && (
+              <Vazio>{pesagens.length === 0 ? 'Nenhuma pesagem ainda. Toque em um animal e escolha “Registrar pesagem”.' : 'Nenhuma pesagem desse brinco.'}</Vazio>
+            )}
+            {pagPesagens.itens.map((p) => (
+              <Linha
+                key={p.id}
+                marca={diaMes(p.data)}
+                titulo={`Brinco ${brincoDe(p.animal_id)}`}
+                valor={textoPeso(p.peso)}
+                onClick={() => setAberto({ tela: 'pesagem', pesagem: p })}
+                dicaAcao="Corrigir ou apagar esta pesagem"
+              />
+            ))}
+          </Secao>
+        </>
+      ) : (
+        /* ---------- Início: um cartão por lote ---------- */
+        <>
+          <Grupos
+            titulo="Lotes"
+            vazio={lotes.length === 0 && 'Comece criando um lote (um pasto, o confinamento…). Todo animal fica em um lote.'}
+            novo="+ Novo lote"
+            onNovo={() => setAberto({ tela: 'lote' })}>
+            {lotes.map((l) => {
+              const r = resumoGrupo(ativos.filter((a) => a.lote_id === l.id));
+              return (
+                <CartaoGrupo
+                  key={l.id}
+                  titulo={l.nome}
+                  valor={numero(r.cabecas)}
+                  unidade={r.cabecas === 1 ? 'cabeça' : 'cabeças'}
+                  detalhes={[r.peso === null ? 'Sem animais' : textoPeso(r.peso), r.gmd !== null && `+${kgDia(r.gmd)}`]}
+                  onClick={() => abrir({ tipo: 'lote', id: l.id })}
+                />
+              );
+            })}
+          </Grupos>
+
+          <Secao titulo="Mais">
+            <Linha
+              titulo="Animais que saíram"
+              subtitulo="Vendidos, abatidos e mortos"
+              valor={numero(saidos.length)}
+              onClick={() => abrir({ tipo: 'saidas' })}
+              dicaAcao="Ver os animais que saíram do rebanho"
+            />
+            <Linha
+              titulo="Pesagens"
+              subtitulo="Corrigir ou apagar uma pesagem"
+              valor={numero(pesagens.length)}
+              onClick={() => abrir({ tipo: 'pesagens' })}
+              dicaAcao="Ver todas as pesagens"
+            />
+          </Secao>
+        </>
+      )}
+
+      {/* ---------- Menu do animal: uma lista de botões, cada um dizendo o que faz ---------- */}
+      {aberto?.tela === 'menu' && (
+        <MenuAcoes
+          titulo={`Brinco ${aberto.animal.brinco}`}
+          descricao={
+            aberto.animal.saida_data
+              ? `${SAIDA[aberto.animal.saida_tipo!]} em ${diaMes(aberto.animal.saida_data)} · ${resumo(aberto.animal)}`
+              : resumo(aberto.animal)
+          }
+          onFechar={fechar}
+          acoes={
+            aberto.animal.saida_data
+              ? [
+                  { titulo: 'Desfazer a saída', descricao: 'Foi registrada por engano: o animal volta para o rebanho.', onClick: () => setAberto({ tela: 'desfazer', animal: aberto.animal }) },
+                  { titulo: 'Corrigir o cadastro', descricao: 'Mudar brinco, raça, sexo, data ou peso de entrada.', onClick: () => setAberto({ tela: 'corrigir', animal: aberto.animal }) },
+                  { titulo: 'Excluir animal', descricao: 'Apaga o animal e todo o histórico dele.', perigo: true, onClick: () => setAberto({ tela: 'excluir', animal: aberto.animal }) },
+                ]
+              : [
+                  { titulo: 'Registrar pesagem', descricao: 'Anotar quanto o animal pesa hoje.', onClick: () => setAberto({ tela: 'pesar', animal: aberto.animal }) },
+                  { titulo: 'Mudar de lote', descricao: 'Levar o animal para outro pasto ou para o confinamento.', onClick: () => setAberto({ tela: 'mover', animal: aberto.animal }) },
+                  { titulo: 'Registrar venda, abate ou morte', descricao: 'O animal sai do rebanho, mas o histórico fica guardado.', onClick: () => setAberto({ tela: 'saida', animal: aberto.animal }) },
+                  { titulo: 'Corrigir o cadastro', descricao: 'Mudar brinco, raça, sexo, data ou peso de entrada.', onClick: () => setAberto({ tela: 'corrigir', animal: aberto.animal }) },
+                  { titulo: 'Excluir animal', descricao: 'Só se foi cadastrado por engano. Apaga todo o histórico.', perigo: true, onClick: () => setAberto({ tela: 'excluir', animal: aberto.animal }) },
+                ]
+          }
         />
-      </Grade>
+      )}
 
-      <div className="flex flex-col gap-3">
-        <label className="relative block">
-          <span className="sr-only">Buscar por brinco</span>
-          <Icone nome="buscar" className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-texto-2" />
-          <input
-            className={`${CAMPO} rounded-2xl bg-cartao pl-12`}
-            placeholder="Buscar por brinco"
-            inputMode="numeric"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
-        </label>
-
-        <Chips>
-          <Chip titulo="Todos" ativo={lote === null} onClick={() => setLote(null)} />
-          {lotes.map((l) => (
-            <Chip key={l.id} titulo={l.nome} ativo={lote === l.id} onClick={() => setLote(l.id)} />
-          ))}
-          <Chip titulo="Mostrar saídas" ativo={!soAtivos} onClick={() => setSoAtivos(!soAtivos)} />
-        </Chips>
-      </div>
-
-      <Secao titulo={`Animais (${lista.length})`} acao={<Botao titulo="+ Entrada" onClick={() => setFormAberto(true)} />}>
-        {lista.length === 0 && <Vazio>Nenhum animal encontrado.</Vazio>}
-        {lista.map((a) => {
-          const ev = evolucao.get(a.id)!;
-          return (
-          <Linha
-            key={a.id}
-            marca={a.brinco}
-            titulo={`${a.raca} · ${a.sexo === 'M' ? 'Macho' : 'Fêmea'}`}
-            subtitulo={`${nomeLote(lotes, a.lote_id)} · ${a.entrada_tipo} em ${diaMes(a.entrada_data)}${ev.gmd !== null ? ` · ${kgDia(ev.gmd)}` : ''}`}
-            valor={a.saida_valor ? reais(a.saida_valor) : `${numero(ev.peso)} kg`}
-            etiqueta={a.saida_tipo && <Etiqueta texto={SAIDA[a.saida_tipo]} tom={a.saida_tipo === 'morte' ? 'alerta' : 'neutro'} />}
-            apagada={!!a.saida_data}
-            onClick={() => setSelecionado(a)}
-            dicaAcao="Abrir opções deste animal"
-          />
-          );
-        })}
-      </Secao>
-      <p className="text-sm font-medium text-texto-2">
-        Clique em um animal para registrar pesagem, mover de lote, registrar a saída, editar ou excluir.
-      </p>
-
-      <Secao titulo="Últimas pesagens">
-        {pesagens.length === 0 && <Vazio>Nenhuma pesagem registrada. Abra um animal e escolha “Registrar pesagem”.</Vazio>}
-        {pesagens.slice(0, 15).map((p) => (
-          <Linha
-            key={p.id}
-            marca={diaMes(p.data)}
-            titulo={`Brinco ${brincoDe(p.animal_id)}`}
-            valor={`${numero(p.peso)} kg`}
-            onClick={() => setFormPesagem(p)}
-            dicaAcao="Editar ou excluir esta pesagem"
-          />
-        ))}
-      </Secao>
-
-      <Secao titulo={`Lotes (${lotes.length})`} acao={<Botao titulo="+ Lote" onClick={() => setFormLote({})} />}>
-        {lotes.length === 0 && <Vazio>Nenhum lote cadastrado. Comece por aqui: os animais entram em um lote.</Vazio>}
-        {lotes.map((l) => (
-          <Linha
-            key={l.id}
-            titulo={l.nome}
-            subtitulo={l.descricao ?? undefined}
-            valor={`${numero(ativos.filter((a) => a.lote_id === l.id).length)} cab.`}
-            onClick={() => setFormLote({ item: l })}
-            dicaAcao="Editar ou excluir este lote"
-          />
-        ))}
-      </Secao>
-
-      {formLote && (
+      {aberto?.tela === 'pesar' && (
         <Formulario
-          titulo={formLote.item ? 'Editar lote' : 'Novo lote'}
+          titulo={`Pesagem do brinco ${aberto.animal.brinco}`}
+          descricao={`Último peso: ${textoPeso(evolucao.get(aberto.animal.id)!.peso)}, em ${diaMes(evolucao.get(aberto.animal.id)!.data)}.`}
           campos={[
-            { chave: 'nome', rotulo: 'Nome', dica: 'Ex.: Pasto do Fundo' },
-            { chave: 'descricao', rotulo: 'Descrição', opcional: true, dica: 'Ex.: 12 hectares, braquiária' },
+            { chave: 'data', rotulo: 'Data da pesagem', tipo: 'data' },
+            { chave: 'peso', rotulo: 'Peso', tipo: 'peso', dica: 'Ex.: 380', ajuda: 'Escolha ao lado se está digitando em quilos (kg) ou arrobas (@).' },
           ]}
-          iniciais={formLote.item && { nome: formLote.item.nome, descricao: formLote.item.descricao ?? '' }}
-          validar={(v) =>
-            lotes.some((l) => l.nome.toLowerCase() === v.nome.trim().toLowerCase() && l.id !== formLote.item?.id)
-              ? 'Já existe um lote com esse nome.'
-              : null
-          }
+          validar={(v) => (v.data < aberto.animal.entrada_data ? `A data não pode ser antes da chegada do animal (${diaMes(aberto.animal.entrada_data)}).` : null)}
+          onSalvar={(v) => salvar('pesagens', { animal_id: aberto.animal.id, data: v.data, peso: num(v.peso) })}
+          salvarTexto="Salvar pesagem"
+          sucesso="Pesagem registrada."
+          onFechar={fechar}
+        />
+      )}
+
+      {aberto?.tela === 'mover' && (
+        <Formulario
+          titulo={`Mudar o brinco ${aberto.animal.brinco} de lote`}
+          descricao={`Hoje ele está em: ${nomeLote(lotes, aberto.animal.lote_id)}.`}
+          campos={[
+            {
+              chave: 'lote',
+              rotulo: 'Para qual lote vai',
+              tipo: 'opcoes',
+              opcoes: opcoesLote.filter((o) => o.valor !== String(aberto.animal.lote_id)),
+              novo: { rotulo: '+ Novo lote', dica: 'Ex.: Pasto do Fundo', criar: criarLote },
+            },
+          ]}
+          validar={(v) => (v.lote && v.lote !== String(aberto.animal.lote_id) ? null : 'Escolha outro lote ou crie um em “+ Novo lote”.')}
+          onSalvar={(v) => salvar('animais', { id: aberto.animal.id, lote_id: Number(v.lote) })}
+          salvarTexto="Mudar de lote"
+          sucesso="Animal mudou de lote."
+          onFechar={fechar}
+        />
+      )}
+
+      {aberto?.tela === 'saida' && (
+        <Formulario
+          titulo={`Saída do brinco ${aberto.animal.brinco}`}
+          descricao="O animal sai da lista do rebanho. Dá para desfazer depois, se for engano."
+          campos={[
+            {
+              chave: 'tipo',
+              rotulo: 'O que aconteceu',
+              tipo: 'opcoes',
+              opcoes: [
+                { valor: 'venda', rotulo: 'Foi vendido' },
+                { valor: 'abate', rotulo: 'Foi abatido' },
+                { valor: 'morte', rotulo: 'Morreu' },
+              ],
+            },
+            { chave: 'data', rotulo: 'Quando', tipo: 'data' },
+            { chave: 'valor', rotulo: 'Valor recebido (R$)', tipo: 'numero', dica: 'Ex.: 6200', quando: (v) => v.tipo === 'venda', ajuda: 'O total que recebeu pelo animal.' },
+            { chave: 'valor', rotulo: 'Valor (R$)', tipo: 'numero', opcional: true, quando: (v) => v.tipo === 'abate' },
+            { chave: 'peso', rotulo: 'Peso na saída', tipo: 'peso', opcional: true, quando: (v) => v.tipo !== 'morte' },
+          ]}
+          validar={(v) => (v.data < aberto.animal.entrada_data ? `A data não pode ser antes da chegada do animal (${diaMes(aberto.animal.entrada_data)}).` : null)}
           onSalvar={(v) =>
-            salvar('lotes', { ...(formLote.item && { id: formLote.item.id }), nome: v.nome.trim(), descricao: v.descricao.trim() || null })
+            salvar('animais', {
+              id: aberto.animal.id,
+              saida_tipo: v.tipo as 'venda' | 'morte' | 'abate',
+              saida_data: v.data,
+              saida_peso: v.tipo !== 'morte' && v.peso.trim() ? num(v.peso) : null,
+              saida_valor: v.tipo !== 'morte' && v.valor.trim() ? num(v.valor) : null,
+            })
           }
+          salvarTexto="Registrar saída"
+          sucesso="Saída registrada."
+          onFechar={fechar}
+        />
+      )}
+
+      {aberto?.tela === 'corrigir' && (
+        <Formulario
+          titulo={`Corrigir o cadastro do brinco ${aberto.animal.brinco}`}
+          campos={CAMPOS_CADASTRO}
+          iniciais={{
+            brinco: aberto.animal.brinco,
+            sexo: aberto.animal.sexo,
+            raca: aberto.animal.raca,
+            e_tipo: aberto.animal.entrada_tipo,
+            e_data: aberto.animal.entrada_data,
+            e_peso: numParaTexto(aberto.animal.entrada_peso),
+            e_valor: aberto.animal.entrada_valor ? numParaTexto(aberto.animal.entrada_valor) : '',
+          }}
+          validar={(v) => {
+            if (aberto.animal.saida_data && v.e_data > aberto.animal.saida_data) return `A chegada não pode ser depois da saída (${diaMes(aberto.animal.saida_data)}).`;
+            // Animal que já saiu não disputa brinco com os que estão no rebanho.
+            return aberto.animal.saida_data ? null : brincoEmUso(v.brinco, aberto.animal.id);
+          }}
+          onSalvar={(v) => salvar('animais', { id: aberto.animal.id, ...cadastro(v) })}
+          salvarTexto="Salvar correção"
+          sucesso="Cadastro corrigido."
+          onFechar={fechar}
+        />
+      )}
+
+      {aberto?.tela === 'desfazer' && (
+        <Confirmacao
+          titulo="Desfazer a saída?"
+          texto={`O brinco ${aberto.animal.brinco} volta para a lista do rebanho, como se não tivesse saído.`}
+          confirmar="Sim, desfazer"
+          perigo={false}
+          sucesso="Saída desfeita."
+          onConfirmar={() =>
+            brincoEmUso(aberto.animal.brinco, aberto.animal.id) ??
+            salvar('animais', { id: aberto.animal.id, saida_data: null, saida_tipo: null, saida_peso: null, saida_valor: null })
+          }
+          onFechar={fechar}
+        />
+      )}
+
+      {aberto?.tela === 'excluir' && (
+        <Confirmacao
+          titulo={`Excluir o brinco ${aberto.animal.brinco}?`}
+          texto="O animal e todas as pesagens e vacinas dele serão apagados de vez. Se ele foi vendido ou morreu, use “Registrar venda, abate ou morte” em vez de excluir: assim o histórico fica guardado."
+          confirmar="Excluir de vez"
+          sucesso="Animal excluído."
+          onConfirmar={() => excluir('animais', aberto.animal.id)}
+          onFechar={fechar}
+        />
+      )}
+
+      {aberto?.tela === 'novo' && (
+        <Formulario
+          titulo="Cadastrar animal"
+          campos={[...CAMPOS_CADASTRO.slice(0, 3), { chave: 'lote', rotulo: 'Em qual lote vai ficar', tipo: 'opcoes', opcoes: opcoesLote, ajuda: 'Se o lote ainda não existe, toque em “+ Novo lote”.', novo: { rotulo: '+ Novo lote', dica: 'Ex.: Pasto do Fundo', criar: criarLote } }, ...CAMPOS_CADASTRO.slice(3)]}
+          iniciais={aberto.lote ? { lote: String(aberto.lote) } : null}
+          validar={(v) => (v.lote ? brincoEmUso(v.brinco) : 'Escolha o lote ou crie um em “+ Novo lote”.')}
+          onSalvar={(v) => salvar('animais', { ...cadastro(v), lote_id: Number(v.lote), saida_data: null, saida_tipo: null, saida_valor: null })}
+          salvarTexto="Cadastrar animal"
+          sucesso="Animal cadastrado."
+          onFechar={fechar}
+        />
+      )}
+
+      {aberto?.tela === 'lote' && (
+        <Formulario
+          titulo={aberto.lote ? `Lote ${aberto.lote.nome}` : 'Novo lote'}
+          campos={[
+            { chave: 'nome', rotulo: 'Nome do lote', dica: 'Ex.: Pasto do Fundo' },
+            { chave: 'descricao', rotulo: 'Observação', opcional: true, dica: 'Ex.: 12 hectares, braquiária' },
+          ]}
+          iniciais={aberto.lote && { nome: aberto.lote.nome, descricao: aberto.lote.descricao ?? '' }}
+          validar={(v) =>
+            lotes.some((l) => l.nome.toLowerCase() === v.nome.trim().toLowerCase() && l.id !== aberto.lote?.id) ? 'Já existe um lote com esse nome.' : null
+          }
+          onSalvar={(v) => salvar('lotes', { ...(aberto.lote && { id: aberto.lote.id }), nome: v.nome.trim(), descricao: v.descricao.trim() || null })}
+          salvarTexto={aberto.lote ? 'Salvar alterações' : 'Criar lote'}
+          sucesso={aberto.lote ? 'Lote atualizado.' : 'Lote criado.'}
           onExcluir={
-            formLote.item &&
+            aberto.lote &&
             (() => {
-              const { id } = formLote.item!;
-              if (loteEmUso(id)) return 'Este lote tem animais ou tratos lançados. Mova os animais e exclua os tratos antes.';
-              if (lote === id) setLote(null);
+              const { id } = aberto.lote!;
+              if (loteEmUso(id)) return 'Não dá para excluir: este lote tem animais ou tratos. Mude os animais de lote antes.';
+              voltar();
               return excluir('lotes', id);
             })
           }
-          onFechar={() => setFormLote(null)}
+          excluirTexto="Excluir lote"
+          onFechar={fechar}
         />
       )}
 
-      {formAberto && (
+      {aberto?.tela === 'pesagem' && (
         <Formulario
-          titulo="Entrada de animal"
-          campos={[...CAMPOS_CADASTRO.slice(0, 3), { chave: 'lote', rotulo: 'Lote', tipo: 'opcoes', opcoes: opcoesLote }, ...CAMPOS_CADASTRO.slice(3)]}
-          validar={(v) => (v.lote ? brincoEmUso(v.brinco) : 'Cadastre um lote antes de dar entrada em animais.')}
-          onSalvar={(v) => salvar('animais', { ...cadastro(v), lote_id: Number(v.lote), saida_data: null, saida_tipo: null, saida_valor: null })}
-          onFechar={() => setFormAberto(false)}
-        />
-      )}
-
-      {selecionado && (
-        <Formulario
-          titulo={`Animal ${selecionado.brinco}`}
+          titulo={`Pesagem do brinco ${brincoDe(aberto.pesagem.animal_id)}`}
           campos={[
-            {
-              chave: 'acao',
-              rotulo: 'O que fazer',
-              tipo: 'opcoes',
-              opcoes: selecionadoAtivo
-                ? [
-                    { valor: 'pesar', rotulo: 'Registrar pesagem' },
-                    { valor: 'mover', rotulo: 'Mover de lote' },
-                    { valor: 'saida', rotulo: 'Registrar saída' },
-                    { valor: 'editar', rotulo: 'Editar dados' },
-                  ]
-                : [{ valor: 'editar', rotulo: 'Editar dados' }, { valor: 'desfazer', rotulo: 'Desfazer saída' }],
-            },
-            { chave: 'p_data', rotulo: 'Data da pesagem', tipo: 'data', quando: (v) => v.acao === 'pesar' },
-            {
-              chave: 'p_peso',
-              rotulo: `Peso (kg) — último: ${numero(evolucao.get(selecionado.id)!.peso)} kg em ${diaMes(evolucao.get(selecionado.id)!.data)}`,
-              tipo: 'numero',
-              quando: (v) => v.acao === 'pesar',
-            },
-            {
-              chave: 'lote',
-              rotulo: `Novo lote (hoje em ${nomeLote(lotes, selecionado.lote_id)})`,
-              tipo: 'opcoes',
-              opcoes: opcoesLote.filter((o) => o.valor !== String(selecionado.lote_id)),
-              quando: (v) => v.acao === 'mover',
-            },
-            { chave: 's_tipo', rotulo: 'Motivo', tipo: 'opcoes', opcoes: [{ valor: 'venda', rotulo: 'Venda' }, { valor: 'abate', rotulo: 'Abate' }, { valor: 'morte', rotulo: 'Morte' }], quando: (v) => v.acao === 'saida' },
-            { chave: 's_data', rotulo: 'Data da saída', tipo: 'data', quando: (v) => v.acao === 'saida' },
-            { chave: 's_peso', rotulo: 'Peso na saída (kg)', tipo: 'numero', opcional: true, quando: (v) => v.acao === 'saida' },
-            { chave: 's_valor', rotulo: 'Valor recebido (R$)', tipo: 'numero', opcional: true, dica: 'Obrigatório em venda', quando: (v) => v.acao === 'saida' },
-            ...CAMPOS_CADASTRO.map((c) => ({ ...c, quando: (v: Valores) => v.acao === 'editar' })),
+            { chave: 'data', rotulo: 'Data da pesagem', tipo: 'data' },
+            { chave: 'peso', rotulo: 'Peso', tipo: 'peso' },
           ]}
-          iniciais={{
-            brinco: selecionado.brinco,
-            sexo: selecionado.sexo,
-            raca: selecionado.raca,
-            e_tipo: selecionado.entrada_tipo,
-            e_data: selecionado.entrada_data,
-            e_peso: numParaTexto(selecionado.entrada_peso),
-            e_valor: selecionado.entrada_valor ? numParaTexto(selecionado.entrada_valor) : '',
-          }}
+          iniciais={{ data: aberto.pesagem.data, peso: numParaTexto(aberto.pesagem.peso) }}
           validar={(v) => {
-            if (v.acao === 'pesar' && v.p_data < selecionado.entrada_data) return `A pesagem não pode ser antes da entrada (${diaMes(selecionado.entrada_data)}).`;
-            if (v.acao === 'mover' && !v.lote) return 'Não há outro lote para onde mover. Cadastre um lote primeiro.';
-            if (v.acao === 'saida') {
-              if (v.s_data < selecionado.entrada_data) return `A saída não pode ser antes da entrada (${diaMes(selecionado.entrada_data)}).`;
-              if (v.s_tipo === 'venda' && !v.s_valor.trim()) return 'Informe o valor recebido na venda.';
-            }
-            if (v.acao === 'editar') {
-              if (selecionado.saida_data && v.e_data > selecionado.saida_data) return `A entrada não pode ser depois da saída (${diaMes(selecionado.saida_data)}).`;
-              // Animal que já saiu não disputa brinco com os ativos.
-              if (selecionadoAtivo) return brincoEmUso(v.brinco, selecionado.id);
-            }
-            if (v.acao === 'desfazer') return brincoEmUso(selecionado.brinco, selecionado.id);
-            return null;
+            const animal = animais.find((a) => a.id === aberto.pesagem.animal_id);
+            return animal && v.data < animal.entrada_data ? `A data não pode ser antes da chegada do animal (${diaMes(animal.entrada_data)}).` : null;
           }}
-          onSalvar={(v) => {
-            const id = selecionado.id;
-            if (v.acao === 'pesar') return salvar('pesagens', { animal_id: id, data: v.p_data, peso: num(v.p_peso) });
-            if (v.acao === 'mover') return salvar('animais', { id, lote_id: Number(v.lote) });
-            if (v.acao === 'editar') return salvar('animais', { id, ...cadastro(v) });
-            if (v.acao === 'desfazer') return salvar('animais', { id, saida_data: null, saida_tipo: null, saida_peso: null, saida_valor: null });
-            return salvar('animais', {
-              id,
-              saida_tipo: v.s_tipo as 'venda' | 'morte' | 'abate',
-              saida_data: v.s_data,
-              saida_peso: v.s_peso.trim() ? num(v.s_peso) : null,
-              saida_valor: v.s_valor.trim() ? num(v.s_valor) : null,
-            });
-          }}
-          onExcluir={() => excluir('animais', selecionado.id)}
-          onFechar={() => setSelecionado(null)}
-        />
-      )}
-
-      {formPesagem && (
-        <Formulario
-          titulo={`Pesagem do brinco ${brincoDe(formPesagem.animal_id)}`}
-          campos={[
-            { chave: 'data', rotulo: 'Data', tipo: 'data' },
-            { chave: 'peso', rotulo: 'Peso (kg)', tipo: 'numero' },
-          ]}
-          iniciais={{ data: formPesagem.data, peso: numParaTexto(formPesagem.peso) }}
-          validar={(v) => {
-            const animal = animais.find((a) => a.id === formPesagem.animal_id);
-            return animal && v.data < animal.entrada_data ? `A pesagem não pode ser antes da entrada (${diaMes(animal.entrada_data)}).` : null;
-          }}
-          onSalvar={(v) => salvar('pesagens', { id: formPesagem.id, data: v.data, peso: num(v.peso) })}
-          onExcluir={() => excluir('pesagens', formPesagem.id)}
-          onFechar={() => setFormPesagem(null)}
+          onSalvar={(v) => salvar('pesagens', { id: aberto.pesagem.id, data: v.data, peso: num(v.peso) })}
+          salvarTexto="Salvar correção"
+          sucesso="Pesagem corrigida."
+          onExcluir={() => excluir('pesagens', aberto.pesagem.id)}
+          excluirTexto="Apagar pesagem"
+          onFechar={fechar}
         />
       )}
     </Tela>
