@@ -29,6 +29,8 @@ export type Animal = {
   saida_tipo: 'venda' | 'morte' | 'abate' | null;
   saida_peso?: number | null;
   saida_valor: number | null;
+  /** Data de nascimento (aproximada nos comprados). Nos nascidos na fazenda é a data de entrada. */
+  nascimento?: string | null;
 };
 /** `saldo_inicial` é o que já havia ao cadastrar; `minimo` serve para destacar estoque baixo. */
 type InsumoBase = { id: number; nome: string; unidade: string; minimo: number; saldo_inicial: number };
@@ -270,6 +272,7 @@ type Alteracao<K extends keyof Base> = Omit<Item<K>, 'id'> | (Partial<Item<K>> &
 export type Remoto = {
   salvar: (colecao: keyof Base, item: { id?: number } & Record<string, unknown>) => Promise<string | null>;
   excluir: (colecao: keyof Base, id: number) => Promise<string | null>;
+  salvarVarios: (colecao: keyof Base, itens: ({ id?: number } & Record<string, unknown>)[]) => Promise<string | null>;
 };
 let remoto: Remoto | null = null;
 export const modoExemplo = () => remoto === null;
@@ -293,13 +296,24 @@ export function useDados() {
  */
 export async function salvar<K extends keyof Base>(colecao: K, item: Alteracao<K>): Promise<string | null> {
   if (remoto) return remoto.salvar(colecao, item as { id?: number } & Record<string, unknown>);
-  const lista = base[colecao] as { id: number }[];
-  const nova =
-    'id' in item && item.id != null
-      ? lista.map((x) => (x.id === item.id ? { ...x, ...item } : x))
-      : [{ ...item, id: proximoId++ }, ...lista];
-  definir({ ...base, [colecao]: nova });
+  definir({ ...base, [colecao]: aplicar(base[colecao] as { id: number }[], [item]) });
   return null;
+}
+
+/** O mesmo que `salvar`, para uma lista (cadastro e ações em lote): uma gravação e uma releitura só. */
+export async function salvarVarios<K extends keyof Base>(colecao: K, itens: Alteracao<K>[]): Promise<string | null> {
+  if (remoto) return remoto.salvarVarios(colecao, itens as ({ id?: number } & Record<string, unknown>)[]);
+  definir({ ...base, [colecao]: aplicar(base[colecao] as { id: number }[], itens) });
+  return null;
+}
+
+/** Modo exemplo: sem `id` entra no começo da lista; com `id` altera só os campos informados. */
+function aplicar(lista: { id: number }[], itens: object[]) {
+  for (const item of itens) {
+    const id = (item as { id?: number }).id;
+    lista = id != null ? lista.map((x) => (x.id === id ? { ...x, ...item } : x)) : [{ ...item, id: proximoId++ }, ...lista];
+  }
+  return lista;
 }
 
 export async function excluir(colecao: keyof Base, id: number): Promise<string | null> {
@@ -336,6 +350,31 @@ export function dias(de: string, ate: string): number {
 export function somarDias(iso: string, n: number): string {
   const d = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n));
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Brincos em sequência a partir do primeiro, mantendo os zeros à esquerda: ('0198', 3) → 0198, 0199, 0200.
+ * null se o primeiro não for só números (aí não dá para numerar).
+ */
+export function faixaBrincos(primeiro: string, n: number): string[] | null {
+  const t = primeiro.trim();
+  if (!/^\d+$/.test(t) || !Number.isInteger(n) || n < 1) return null;
+  // BigInt: brinco SISBOV tem 15 dígitos, perto do limite de precisão do Number.
+  return Array.from({ length: n }, (_, i) => String(BigInt(t) + BigInt(i)).padStart(t.length, '0'));
+}
+
+/**
+ * Divide `total` em centavos, proporcional a `pesos` (ex.: valor de uma venda pelo peso de cada animal).
+ * A sobra do arredondamento vai para o último, para a soma bater exatamente com o total.
+ */
+export function ratear(total: number, pesos: number[]): number[] {
+  if (pesos.length === 0) return [];
+  const soma = pesos.reduce((s, p) => s + p, 0);
+  const fatias = soma > 0 ? pesos : pesos.map(() => 1);
+  const centavos = Math.round(total * 100);
+  const partes = fatias.map((p) => Math.floor((centavos * p) / (soma > 0 ? soma : fatias.length)));
+  partes[partes.length - 1] += centavos - partes.reduce((s, c) => s + c, 0);
+  return partes.map((c) => c / 100);
 }
 
 /**

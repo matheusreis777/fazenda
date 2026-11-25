@@ -101,3 +101,32 @@ const r2 = await criarLote('pasto novo do teste');
 assert.equal(r2.valor, r1.valor);
 assert.deepEqual(await criarLote('   '), { erro: 'Digite o nome do lote.' });
 console.log('OK: criar lote');
+
+// Ações em lote: brincos em sequência, rateio exato em centavos e várias gravações numa chamada.
+const { faixaBrincos, ratear, salvarVarios } = await import('./dados.ts');
+assert.deepEqual(faixaBrincos('0198', 3), ['0198', '0199', '0200']);
+assert.deepEqual(faixaBrincos(' 0999 ', 2), ['0999', '1000']);
+assert.deepEqual(faixaBrincos('99', 2), ['99', '100']);
+assert.deepEqual(faixaBrincos('105000000000001', 2), ['105000000000001', '105000000000002']);
+assert.equal(faixaBrincos('A12', 2), null);
+assert.equal(faixaBrincos('12', 0), null);
+assert.equal(faixaBrincos('12', 1.5), null);
+const tres = ratear(10000, [1, 1, 1]);
+assert.deepEqual(tres, [3333.33, 3333.33, 3333.34]);
+assert.equal(Math.round(tres.reduce((s, v) => s + v, 0) * 100), 1000000);
+assert.deepEqual(ratear(1000, [300, 200]), [600, 400]);
+assert.deepEqual(ratear(100, [0, 0]), [50, 50]);
+assert.deepEqual(ratear(5, []), []);
+
+const antes = lerDados().animais.length;
+const semSaida = { saida_data: null, saida_tipo: null, saida_valor: null };
+const novoAnimal = (brinco) => ({ brinco, sexo: 'M', raca: 'Nelore', lote_id: 1, entrada_tipo: 'compra', entrada_data: '2026-11-20', entrada_peso: 200, ...semSaida });
+await salvarVarios('animais', ['0301', '0302', '0303'].map(novoAnimal));
+assert.equal(lerDados().animais.length, antes + 3);
+const criados = lerDados().animais.filter((a) => a.brinco === '0301' || a.brinco === '0302');
+await salvarVarios('animais', criados.map((a) => ({ id: a.id, lote_id: 2 })));
+assert.deepEqual(
+  lerDados().animais.filter((a) => a.brinco.startsWith('030')).map((a) => [a.brinco, a.lote_id]).sort(),
+  [['0301', 2], ['0302', 2], ['0303', 1]],
+);
+console.log('OK: ações em lote');

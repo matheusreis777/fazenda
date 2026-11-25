@@ -80,5 +80,27 @@ export function ligarBanco() {
       await carregar();
       return null;
     },
+    async salvarVarios(colecao, itens) {
+      const tabela = () => supabase.from(TABELA[colecao]);
+      const novos = itens.filter((i) => i.id == null);
+      // Alterações iguais (ex.: o mesmo lote de destino para 40 animais) vão num pedido só.
+      const grupos = new Map<string, { campos: Record<string, unknown>; ids: number[] }>();
+      for (const { id, ...campos } of itens) {
+        if (id == null) continue;
+        const chave = JSON.stringify(campos);
+        const grupo = grupos.get(chave) ?? { campos, ids: [] };
+        grupo.ids.push(id);
+        grupos.set(chave, grupo);
+      }
+      // ponytail: cada pedido é atômico (o insert inteiro entra ou não), mas o conjunto não é uma transação;
+      // se um falhar, a releitura abaixo mostra o que foi gravado. Uma função no banco se isso pesar.
+      const respostas = await Promise.all([
+        ...(novos.length ? [tabela().insert(novos)] : []),
+        ...[...grupos.values()].map((g) => tabela().update(g.campos).in('id', g.ids)),
+      ]);
+      await carregar();
+      const erro = respostas.find((r) => r.error)?.error;
+      return erro ? mensagem(erro) : null;
+    },
   });
 }

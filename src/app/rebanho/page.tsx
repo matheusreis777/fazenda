@@ -3,9 +3,26 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { type Campo, Formulario, type Valores } from '@/components/formulario';
+import { type Campo, Formulario, marcados, type Valores } from '@/components/formulario';
 import { Botao, Cartao, CartaoGrupo, Confirmacao, Etiqueta, Grade, Grupos, Linha, MenuAcoes, Opcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
-import { type Animal, criarLote, diaMes, evolucaoPeso, excluir, type Lote, loteEmUso, nomeLote, numero, type Pesagem, reais, salvar, useDados } from '@/lib/dados';
+import {
+  type Animal,
+  criarLote,
+  diaMes,
+  evolucaoPeso,
+  excluir,
+  faixaBrincos,
+  type Lote,
+  loteEmUso,
+  nomeLote,
+  numero,
+  type Pesagem,
+  ratear,
+  reais,
+  salvar,
+  salvarVarios,
+  useDados,
+} from '@/lib/dados';
 import { num, numParaTexto, textoPeso } from '@/lib/formato';
 
 const SAIDA = { venda: 'Vendido', morte: 'Morreu', abate: 'Abatido' } as const;
@@ -30,7 +47,18 @@ const CAMPOS_CADASTRO: Campo[] = [
   { chave: 'e_data', rotulo: 'Data em que chegou ou nasceu', tipo: 'data' },
   { chave: 'e_peso', rotulo: 'Peso nesse dia', tipo: 'peso', dica: 'Ex.: 210', ajuda: 'Em quilos ou em arrobas (@). Se não pesou, coloque um peso aproximado.' },
   { chave: 'e_valor', rotulo: 'Quanto pagou (R$)', tipo: 'numero', opcional: true, dica: 'Ex.: 3200', ajuda: 'Deixe em branco se nasceu na fazenda.' },
+  {
+    chave: 'nasc',
+    rotulo: 'Data de nascimento',
+    tipo: 'data',
+    opcional: true,
+    ajuda: 'Se não souber o dia, coloque uma data aproximada. Serve para mostrar a idade.',
+    quando: (v) => v.e_tipo === 'compra',
+  },
 ];
+
+/** Nascimento não pode ser depois da chegada (nos nascidos na fazenda, a chegada é o nascimento). */
+const nascimentoInvalido = (v: Valores) => (v.e_tipo === 'compra' && v.nasc && v.nasc > v.e_data ? 'O nascimento não pode ser depois da chegada.' : null);
 
 const cadastro = (v: Valores) => ({
   brinco: v.brinco.trim(),
@@ -40,12 +68,14 @@ const cadastro = (v: Valores) => ({
   entrada_data: v.e_data,
   entrada_peso: num(v.e_peso),
   entrada_valor: v.e_valor.trim() ? num(v.e_valor) : null,
+  nascimento: v.e_tipo === 'nascimento' ? v.e_data : v.nasc || null,
 });
 
 /** O que está aberto na tela: o menu do animal, um dos formulários dele, ou nada. */
 type Aberto =
   | { tela: 'menu' | 'pesar' | 'mover' | 'saida' | 'corrigir' | 'desfazer' | 'excluir'; animal: Animal }
-  | { tela: 'novo'; lote?: number }
+  | { tela: 'novo' | 'compraVarios'; lote?: number }
+  | { tela: 'acoesLote' | 'pesarLote' | 'moverVarios' | 'venderVarios'; lote: Lote }
   | { tela: 'lote'; lote?: Lote }
   | { tela: 'pesagem'; pesagem: Pesagem }
   | null;
@@ -81,6 +111,9 @@ export default function Rebanho() {
   const saidos = animais.filter((a) => a.saida_data).sort((a, b) => b.saida_data!.localeCompare(a.saida_data!));
   const evolucao = new Map(animais.map((a) => [a.id, evolucaoPeso(a, pesagens)]));
   const brincoDe = (id: number) => animais.find((a) => a.id === id)?.brinco ?? '—';
+  /** Ativos de um lote em ordem de brinco (0099 antes de 0100), para as ações em lote. */
+  const animaisDo = (lote: Lote) => ativos.filter((a) => a.lote_id === lote.id).sort((a, b) => a.brinco.localeCompare(b.brinco, 'pt-BR', { numeric: true }));
+  const opcoesBrinco = (grupo: Animal[]) => grupo.map((a) => ({ valor: String(a.id), rotulo: a.brinco }));
 
   /** Cabeças, peso médio e ganho médio por dia de um grupo de animais. */
   const resumoGrupo = (grupo: Animal[]) => ({
@@ -157,7 +190,7 @@ export default function Rebanho() {
             onVoltar={voltar}
             titulo={loteAberto.nome}
             descricao={loteAberto.descricao}
-            acao={<Botao titulo="Editar lote" secundario onClick={() => setAberto({ tela: 'lote', lote: loteAberto })} />}
+            acao={<Botao titulo="Ações do lote" secundario onClick={() => setAberto({ tela: 'acoesLote', lote: loteAberto })} />}
           />
           {(() => {
             const r = resumoGrupo(doLote);
@@ -271,6 +304,12 @@ export default function Rebanho() {
               valor={numero(saidos.length)}
               onClick={() => abrir('saidas')}
               dicaAcao="Ver os animais que saíram do rebanho"
+            />
+            <Linha
+              titulo="Entrada de compra (vários animais)"
+              subtitulo="Cadastrar de uma vez os animais de uma compra"
+              onClick={() => setAberto({ tela: 'compraVarios' })}
+              dicaAcao="Cadastrar vários animais de uma compra"
             />
             <Linha
               titulo="Pesagens"
@@ -398,9 +437,11 @@ export default function Rebanho() {
             e_data: aberto.animal.entrada_data,
             e_peso: numParaTexto(aberto.animal.entrada_peso),
             e_valor: aberto.animal.entrada_valor ? numParaTexto(aberto.animal.entrada_valor) : '',
+            nasc: aberto.animal.nascimento ?? '',
           }}
           validar={(v) => {
             if (aberto.animal.saida_data && v.e_data > aberto.animal.saida_data) return `A chegada não pode ser depois da saída (${diaMes(aberto.animal.saida_data)}).`;
+            if (nascimentoInvalido(v)) return nascimentoInvalido(v);
             // Animal que já saiu não disputa brinco com os que estão no rebanho.
             return aberto.animal.saida_data ? null : brincoEmUso(v.brinco, aberto.animal.id);
           }}
@@ -442,7 +483,7 @@ export default function Rebanho() {
           titulo="Cadastrar animal"
           campos={[...CAMPOS_CADASTRO.slice(0, 3), { chave: 'lote', rotulo: 'Em qual lote vai ficar', tipo: 'opcoes', opcoes: opcoesLote, ajuda: 'Se o lote ainda não existe, toque em “+ Novo lote”.', novo: { rotulo: '+ Novo lote', dica: 'Ex.: Pasto do Fundo', criar: criarLote } }, ...CAMPOS_CADASTRO.slice(3)]}
           iniciais={aberto.lote ? { lote: String(aberto.lote) } : null}
-          validar={(v) => (v.lote ? brincoEmUso(v.brinco) : 'Escolha o lote ou crie um em “+ Novo lote”.')}
+          validar={(v) => (v.lote ? (nascimentoInvalido(v) ?? brincoEmUso(v.brinco)) : 'Escolha o lote ou crie um em “+ Novo lote”.')}
           onSalvar={(v) => salvar('animais', { ...cadastro(v), lote_id: Number(v.lote), saida_data: null, saida_tipo: null, saida_valor: null })}
           salvarTexto="Cadastrar animal"
           sucesso="Animal cadastrado."
@@ -495,6 +536,183 @@ export default function Rebanho() {
           sucesso="Pesagem corrigida."
           onExcluir={() => excluir('pesagens', aberto.pesagem.id)}
           excluirTexto="Apagar pesagem"
+          onFechar={fechar}
+        />
+      )}
+
+      {/* ---------- Ações com o lote inteiro ---------- */}
+      {aberto?.tela === 'acoesLote' && (
+        <MenuAcoes
+          titulo={`Lote ${aberto.lote.nome}`}
+          descricao={`${numero(animaisDo(aberto.lote).length)} cabeças`}
+          onFechar={fechar}
+          acoes={[
+            ...(animaisDo(aberto.lote).length > 0
+              ? [
+                  { titulo: 'Pesar o lote', descricao: 'Anotar o peso de cada animal que passou na balança, numa tela só.', onClick: () => setAberto({ tela: 'pesarLote', lote: aberto.lote }) },
+                  { titulo: 'Mudar vários de lote', descricao: 'Marcar os animais e levar todos para outro pasto.', onClick: () => setAberto({ tela: 'moverVarios', lote: aberto.lote }) },
+                  { titulo: 'Vender ou abater vários', descricao: 'Lançar a saída de vários animais com o valor total da venda.', onClick: () => setAberto({ tela: 'venderVarios', lote: aberto.lote }) },
+                ]
+              : []),
+            { titulo: 'Entrada de compra (vários animais)', descricao: 'Cadastrar de uma vez os animais de uma compra neste lote.', onClick: () => setAberto({ tela: 'compraVarios', lote: aberto.lote.id }) },
+            { titulo: 'Editar lote', descricao: 'Mudar o nome ou a observação, ou excluir o lote.', onClick: () => setAberto({ tela: 'lote', lote: aberto.lote }) },
+          ]}
+        />
+      )}
+
+      {aberto?.tela === 'pesarLote' &&
+        (() => {
+          const grupo = animaisDo(aberto.lote);
+          const pesados = (v: Valores) => grupo.filter((a) => v[`p${a.id}`].trim());
+          return (
+            <Formulario
+              titulo={`Pesar o lote ${aberto.lote.nome}`}
+              descricao="Digite o peso de cada animal que passou na balança. Os que ficarem em branco não são gravados."
+              campos={[
+                { chave: 'data', rotulo: 'Data da pesagem', tipo: 'data' },
+                ...grupo.map((a): Campo => {
+                  const ev = evolucao.get(a.id)!;
+                  return { chave: `p${a.id}`, rotulo: `Brinco ${a.brinco}`, tipo: 'peso', opcional: true, ajuda: `Último: ${textoPeso(ev.peso)} em ${diaMes(ev.data)}` };
+                }),
+              ]}
+              validar={(v) => {
+                const lista = pesados(v);
+                if (lista.length === 0) return 'Digite o peso de pelo menos um animal.';
+                const antes = lista.find((a) => v.data < a.entrada_data);
+                return antes ? `O brinco ${antes.brinco} chegou em ${diaMes(antes.entrada_data)}, depois da data da pesagem.` : null;
+              }}
+              onSalvar={(v) => salvarVarios('pesagens', pesados(v).map((a) => ({ animal_id: a.id, data: v.data, peso: num(v[`p${a.id}`]) })))}
+              salvarTexto="Salvar pesagens"
+              sucesso="Pesagens registradas."
+              onFechar={fechar}
+            />
+          );
+        })()}
+
+      {aberto?.tela === 'moverVarios' && (
+        <Formulario
+          titulo={`Mudar animais de ${aberto.lote.nome}`}
+          descricao="Marque os animais e escolha para onde vão."
+          campos={[
+            { chave: 'animais', rotulo: 'Quais animais', tipo: 'varios', opcoes: opcoesBrinco(animaisDo(aberto.lote)) },
+            {
+              chave: 'lote',
+              rotulo: 'Para qual lote vão',
+              tipo: 'opcoes',
+              opcoes: opcoesLote.filter((o) => o.valor !== String(aberto.lote.id)),
+              novo: { rotulo: '+ Novo lote', dica: 'Ex.: Pasto do Fundo', criar: criarLote },
+            },
+          ]}
+          validar={(v) => (v.lote && v.lote !== String(aberto.lote.id) ? null : 'Escolha outro lote ou crie um em “+ Novo lote”.')}
+          onSalvar={(v) => salvarVarios('animais', marcados(v.animais).map((id) => ({ id: Number(id), lote_id: Number(v.lote) })))}
+          salvarTexto="Mudar de lote"
+          sucesso="Animais mudaram de lote."
+          onFechar={fechar}
+        />
+      )}
+
+      {aberto?.tela === 'venderVarios' &&
+        (() => {
+          const grupo = animaisDo(aberto.lote);
+          const escolhidos = (v: Valores) => grupo.filter((a) => marcados(v.animais).includes(String(a.id)));
+          return (
+            <Formulario
+              titulo={`Saída de animais de ${aberto.lote.nome}`}
+              descricao="O valor e o peso total são divididos entre os animais pelo peso atual de cada um (última pesagem). Uma saída por engano se desfaz em “Animais que saíram”."
+              campos={[
+                { chave: 'animais', rotulo: 'Quais animais', tipo: 'varios', opcoes: opcoesBrinco(grupo) },
+                {
+                  chave: 'tipo',
+                  rotulo: 'O que aconteceu',
+                  tipo: 'opcoes',
+                  opcoes: [
+                    { valor: 'venda', rotulo: 'Foram vendidos' },
+                    { valor: 'abate', rotulo: 'Foram abatidos' },
+                  ],
+                },
+                { chave: 'data', rotulo: 'Quando', tipo: 'data' },
+                { chave: 'valor', rotulo: 'Valor total recebido (R$)', tipo: 'numero', dica: 'Ex.: 62000', ajuda: 'O total de todos os animais marcados.', quando: (v) => v.tipo === 'venda' },
+                { chave: 'valor', rotulo: 'Valor total (R$)', tipo: 'numero', opcional: true, quando: (v) => v.tipo === 'abate' },
+                { chave: 'peso', rotulo: 'Peso total na saída', tipo: 'peso', opcional: true, ajuda: 'Todos juntos (ex.: a balança do caminhão).' },
+              ]}
+              validar={(v) => {
+                const antes = escolhidos(v).find((a) => v.data < a.entrada_data);
+                return antes ? `O brinco ${antes.brinco} chegou em ${diaMes(antes.entrada_data)}, depois da data da saída.` : null;
+              }}
+              onSalvar={(v) => {
+                const lista = escolhidos(v);
+                const pesos = lista.map((a) => evolucao.get(a.id)!.peso);
+                const valores = v.valor.trim() ? ratear(num(v.valor), pesos) : null;
+                const pesosSaida = v.peso.trim() ? ratear(num(v.peso), pesos) : null;
+                return salvarVarios(
+                  'animais',
+                  lista.map((a, i) => ({
+                    id: a.id,
+                    saida_tipo: v.tipo as 'venda' | 'abate',
+                    saida_data: v.data,
+                    saida_valor: valores?.[i] ?? null,
+                    saida_peso: pesosSaida?.[i] ?? null,
+                  })),
+                );
+              }}
+              salvarTexto="Registrar saída"
+              sucesso="Saída registrada."
+              onFechar={fechar}
+            />
+          );
+        })()}
+
+      {aberto?.tela === 'compraVarios' && (
+        <Formulario
+          titulo="Entrada de compra (vários animais)"
+          descricao="Cadastra de uma vez os animais de uma mesma compra. Depois dá para corrigir cada um."
+          campos={[
+            { chave: 'primeiro', rotulo: 'Brinco do primeiro animal', dica: 'Ex.: 0201', ajuda: 'Só números. Os outros seguem a sequência: 0201, 0202, 0203…' },
+            { chave: 'quantidade', rotulo: 'Quantos animais', tipo: 'numero', dica: 'Ex.: 40' },
+            CAMPOS_CADASTRO[1],
+            CAMPOS_CADASTRO[2],
+            { chave: 'lote', rotulo: 'Em qual lote vão ficar', tipo: 'opcoes', opcoes: opcoesLote, novo: { rotulo: '+ Novo lote', dica: 'Ex.: Pasto do Fundo', criar: criarLote } },
+            { chave: 'e_data', rotulo: 'Data da compra', tipo: 'data' },
+            { chave: 'e_peso', rotulo: 'Peso médio por cabeça', tipo: 'peso', dica: 'Ex.: 210', ajuda: 'O peso total da balança dividido pelo número de animais.' },
+            { chave: 'e_valor', rotulo: 'Valor total pago (R$)', tipo: 'numero', opcional: true, dica: 'Ex.: 128000', ajuda: 'O total da compra. É dividido igualmente entre os animais.' },
+            { chave: 'nasc', rotulo: 'Data de nascimento aproximada', tipo: 'data', opcional: true, ajuda: 'A mesma para todos. Serve para mostrar a idade.' },
+          ]}
+          iniciais={aberto.lote ? { lote: String(aberto.lote) } : null}
+          validar={(v) => {
+            const n = num(v.quantidade);
+            if (!Number.isInteger(n) || n > 500) return 'A quantidade precisa ser um número inteiro, de 1 a 500.';
+            const brincos = faixaBrincos(v.primeiro, n);
+            if (!brincos) return 'O brinco do primeiro animal precisa ser só números, para numerar os outros em sequência.';
+            if (!v.lote) return 'Escolha o lote ou crie um em “+ Novo lote”.';
+            if (v.nasc && v.nasc > v.e_data) return 'O nascimento não pode ser depois da compra.';
+            const emUso = brincos.filter((b) => ativos.some((a) => a.brinco === b));
+            return emUso.length
+              ? `Já existem no rebanho os brincos ${emUso.slice(0, 5).join(', ')}${emUso.length > 5 ? ` e mais ${emUso.length - 5}` : ''}. Comece de outro número.`
+              : null;
+          }}
+          onSalvar={(v) => {
+            const brincos = faixaBrincos(v.primeiro, num(v.quantidade))!;
+            const valores = v.e_valor.trim() ? ratear(num(v.e_valor), brincos.map(() => 1)) : null;
+            return salvarVarios(
+              'animais',
+              brincos.map((brinco, i) => ({
+                brinco,
+                sexo: v.sexo as 'M' | 'F',
+                raca: v.raca.trim(),
+                lote_id: Number(v.lote),
+                entrada_tipo: 'compra' as const,
+                entrada_data: v.e_data,
+                entrada_peso: num(v.e_peso),
+                entrada_valor: valores?.[i] ?? null,
+                nascimento: v.nasc || null,
+                saida_data: null,
+                saida_tipo: null,
+                saida_valor: null,
+              })),
+            );
+          }}
+          salvarTexto="Cadastrar animais"
+          sucesso="Animais cadastrados."
           onFechar={fechar}
         />
       )}

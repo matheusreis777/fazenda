@@ -11,9 +11,10 @@ export type Campo = {
   rotulo: string;
   /**
    * texto (padrão), numero (> 0, aceita vírgula), data (seletor do navegador; valor 'AAAA-MM-DD', começa em hoje),
-   * opcoes (escolha única), senha, ou peso (número com escolha entre kg e @; chega em `onSalvar` sempre em kg).
+   * opcoes (escolha única), varios (marcar vários das opções; ler o valor com `marcados`), senha,
+   * ou peso (número com escolha entre kg e @; chega em `onSalvar` sempre em kg).
    */
-  tipo?: 'texto' | 'numero' | 'data' | 'opcoes' | 'senha' | 'email' | 'peso';
+  tipo?: 'texto' | 'numero' | 'data' | 'opcoes' | 'varios' | 'senha' | 'email' | 'peso';
   opcoes?: { valor: string; rotulo: string }[];
   opcional?: boolean;
   /** Exemplo dentro do campo vazio (some ao digitar). */
@@ -32,11 +33,16 @@ export type Campo = {
 };
 
 export type Valores = Record<string, string>;
+/** Os valores marcados num campo `varios` (guardados no formulário separados por vírgula). */
+export const marcados = (valor: string | undefined) => (valor ? valor.split(',') : []);
 /** Texto = mensagem de erro; vazio = deu certo. */
 type Resultado = string | null | void;
 
 function erroDoCampo(campo: Campo, valor: string): string | null {
-  if (!valor.trim()) return campo.opcional ? null : campo.tipo === 'opcoes' ? 'Escolha uma opção.' : 'Este campo é obrigatório.';
+  if (!valor.trim()) {
+    if (campo.opcional) return null;
+    return campo.tipo === 'opcoes' ? 'Escolha uma opção.' : campo.tipo === 'varios' ? 'Marque pelo menos um.' : 'Este campo é obrigatório.';
+  }
   if ((campo.tipo === 'numero' || campo.tipo === 'peso') && !(num(valor) > 0)) return 'Digite só números, maiores que zero (ex.: 250 ou 12,5).';
   if (campo.tipo === 'data' && !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return 'Escolha a data no calendário.';
   return null;
@@ -201,7 +207,7 @@ export function Formulario({
             const id = `campo-${c.chave}`;
             return (
               <div key={c.chave} className="flex flex-col gap-1.5">
-                <label htmlFor={c.tipo === 'opcoes' ? undefined : id} id={`${id}-rotulo`} className="text-sm font-bold">
+                <label htmlFor={c.tipo === 'opcoes' || c.tipo === 'varios' ? undefined : id} id={`${id}-rotulo`} className="text-sm font-bold">
                   {c.rotulo}
                   {c.opcional ? <span className="font-medium text-texto-2"> (opcional)</span> : <span className="text-alerta"> *</span>}
                 </label>
@@ -247,6 +253,8 @@ export function Formulario({
                       </p>
                     )}
                   </div>
+                ) : c.tipo === 'varios' ? (
+                  <Varios opcoes={c.opcoes ?? []} valor={valores[c.chave]} rotuloId={`${id}-rotulo`} onMudar={(v) => mudar(c.chave, v)} />
                 ) : c.tipo === 'opcoes' ? (
                   <div className="flex flex-col gap-2">
                     <div role="radiogroup" aria-labelledby={`${id}-rotulo`} className="flex flex-wrap gap-2">
@@ -351,6 +359,33 @@ export function Formulario({
           </p>
         </div>
       </form>
+    </div>
+  );
+}
+
+/** Campo `varios`: cada opção liga e desliga; "Marcar todos" para o lote inteiro. */
+function Varios({ opcoes, valor, rotuloId, onMudar }: { opcoes: { valor: string; rotulo: string }[]; valor: string; rotuloId: string; onMudar: (v: string) => void }) {
+  const lista = marcados(valor);
+  const todos = lista.length === opcoes.length;
+  const alternar = (v: string) => onMudar((lista.includes(v) ? lista.filter((m) => m !== v) : [...lista, v]).join(','));
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-texto-2" aria-live="polite">
+          {lista.length} de {opcoes.length} {lista.length === 1 ? 'marcado' : 'marcados'}
+        </span>
+        <button
+          type="button"
+          onClick={() => onMudar(todos ? '' : opcoes.map((o) => o.valor).join(','))}
+          className="cursor-pointer text-sm font-bold text-texto-2 underline hover:opacity-80">
+          {todos ? 'Desmarcar todos' : 'Marcar todos'}
+        </button>
+      </div>
+      <div role="group" aria-labelledby={rotuloId} className="flex flex-wrap gap-2">
+        {opcoes.map((o) => (
+          <Chip key={o.valor} titulo={o.rotulo} ativo={lista.includes(o.valor)} onClick={() => alternar(o.valor)} />
+        ))}
+      </div>
     </div>
   );
 }

@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { Botao, Icone, Tela, Trilha } from '@/components/ui';
-import { dataCurta, kgPorDia, montarCertidao, pesoExtenso, porArroba } from '@/lib/certidao';
-import { nomeLote, reais, TIPOS_SANIDADE, useDados } from '@/lib/dados';
+import { dataCurta, kgPorDia, montarCertidao, pesoExtenso, porArroba, tempoExtenso } from '@/lib/certidao';
+import { dias, nomeLote, reais, TIPOS_SANIDADE, useDados } from '@/lib/dados';
 import { hojeIso } from '@/lib/formato';
 
 const ENTRADA = { compra: 'Comprado', nascimento: 'Nasceu na fazenda' } as const;
@@ -59,6 +59,8 @@ export default function CertidaoAnimal() {
   const agora = new Date();
   const compraArroba = porArroba(c.compra, animal.entrada_peso);
   const vendaArroba = porArroba(c.venda, animal.saida_peso);
+  // Animais antigos nascidos na fazenda não têm `nascimento` gravado: a chegada é o nascimento.
+  const nascimento = animal.nascimento ?? (animal.entrada_tipo === 'nascimento' ? animal.entrada_data : null);
   // Volta para onde o animal aparece: o lote dele ou a lista dos que saíram.
   const voltar = () => router.push(animal.saida_data ? '/rebanho?saidas' : `/rebanho?lote=${animal.lote_id}`);
 
@@ -94,7 +96,9 @@ export default function CertidaoAnimal() {
                 ['Raça', animal.raca || null],
                 [animal.saida_data ? 'Lote na saída' : 'Lote atual', lote],
                 ['Situação', c.situacao],
-                [animal.entrada_tipo === 'nascimento' ? 'Idade' : 'Tempo na propriedade', `${c.tempo} (${c.dias.toLocaleString('pt-BR')} dias)`],
+                ['Nascimento', nascimento ? dataCurta(nascimento) : null],
+                ['Idade', nascimento ? tempoExtenso(Math.max(dias(nascimento, animal.saida_data ?? hojeIso()), 0)) : null],
+                animal.entrada_tipo === 'compra' && ['Tempo na propriedade', `${c.tempo} (${c.dias.toLocaleString('pt-BR')} dias)`],
               ]}
             />
           </Bloco>
