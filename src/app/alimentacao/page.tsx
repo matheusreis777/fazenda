@@ -3,12 +3,9 @@
 import { useState } from 'react';
 
 import { type Campo, Formulario, type Valores } from '@/components/formulario';
-import { Barra, Botao, Cartao, CartaoGrupo, contem, Grade, Grupos, Linha, Secao, Tela, Topo, usePaginacao, Vazio, Voltar } from '@/components/ui';
+import { Barra, Botao, Cartao, CartaoGrupo, contem, Grade, Grupos, Linha, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
 import { criarLote, diaMes, excluir, type Insumo, insumoEmUso, nomeLote, numero, salvar, type Trato, useDados } from '@/lib/dados';
 import { num, numParaTexto } from '@/lib/formato';
-
-/** O que a tela mostra: os cartões dos insumos, os tratos de um insumo, todos os tratos ou o consumo. */
-type Vista = { tipo: 'inicio' } | { tipo: 'insumo'; id: number } | { tipo: 'tratos' } | { tipo: 'consumo' };
 
 export default function Alimentacao() {
   const { lotes, estoque, tratos } = useDados();
@@ -16,12 +13,9 @@ export default function Alimentacao() {
   const [formInsumo, setFormInsumo] = useState<{ item?: Insumo } | null>(null);
   const [formTrato, setFormTrato] = useState<{ item?: Trato; insumo?: number } | null>(null);
   const [busca, setBusca] = useState('');
-  const [vista, setVista] = useState<Vista>({ tipo: 'inicio' });
-  const abrir = (v: Vista) => {
-    setVista(v);
-    setBusca('');
-  };
-  const voltar = () => abrir({ tipo: 'inicio' });
+  // O que a tela mostra: ?insumo=ID (os tratos dele), ?tratos (todos), ?consumo ou, sem nada, os cartões dos insumos.
+  const { ver, id, abrir } = useVista(['insumo', 'tratos', 'consumo'], () => setBusca(''));
+  const voltar = () => abrir();
 
   const baixos = estoque.filter((e) => e.saldo < e.minimo);
   const ultimoDia = tratos[0]?.data;
@@ -32,14 +26,14 @@ export default function Alimentacao() {
   const maiorConsumo = Math.max(...consumo.map(([, v]) => v));
 
   const termo = busca.trim();
-  const insumoAberto = vista.tipo === 'insumo' ? estoque.find((e) => e.id === vista.id) : undefined;
-  const noInicio = !insumoAberto && vista.tipo !== 'tratos' && vista.tipo !== 'consumo';
+  const insumoAberto = ver === 'insumo' ? estoque.find((e) => String(e.id) === id) : undefined;
+  const noInicio = !insumoAberto && ver !== 'tratos' && ver !== 'consumo';
   const doInsumo = insumoAberto ? tratos.filter((t) => t.insumo_id === insumoAberto.id) : [];
   // Dentro de um insumo a busca procura o lote; no resto, insumo ou lote.
   const lista = insumoAberto
     ? doInsumo.filter((t) => contem(nomeLote(lotes, t.lote_id), termo))
     : tratos.filter((t) => contem(t.insumo, termo) || contem(nomeLote(lotes, t.lote_id), termo));
-  const pagTratos = usePaginacao(lista, [termo, vista]);
+  const pagTratos = usePaginacao(lista, [termo, ver, id]);
 
   const linhaTrato = (t: Trato, mostrarInsumo: boolean) => (
     <Linha
@@ -78,8 +72,8 @@ export default function Alimentacao() {
       ) : insumoAberto ? (
         /* ---------- Dentro de um insumo ---------- */
         <>
-          <Voltar
-            para="Todos os insumos"
+          <Trilha
+            raiz="Alimentação"
             onVoltar={voltar}
             titulo={insumoAberto.nome}
             acao={<Botao titulo="Editar insumo" secundario onClick={() => setFormInsumo({ item: insumoAberto })} />}
@@ -104,10 +98,10 @@ export default function Alimentacao() {
             {pagTratos.itens.map((t) => linhaTrato(t, false))}
           </Secao>
         </>
-      ) : vista.tipo === 'tratos' ? (
+      ) : ver === 'tratos' ? (
         /* ---------- Todos os tratos ---------- */
         <>
-          <Voltar para="Todos os insumos" onVoltar={voltar} />
+          <Trilha raiz="Alimentação" onVoltar={voltar} aqui="Tratos" />
           <Secao
             titulo={`Tratos (${lista.length})`}
             descricao="O que foi dado de comer a cada lote. Toque para corrigir ou apagar. Use a busca no topo para procurar insumo ou lote."
@@ -116,10 +110,10 @@ export default function Alimentacao() {
             {pagTratos.itens.map((t) => linhaTrato(t, true))}
           </Secao>
         </>
-      ) : vista.tipo === 'consumo' ? (
+      ) : ver === 'consumo' ? (
         /* ---------- Consumo por insumo ---------- */
         <>
-          <Voltar para="Todos os insumos" onVoltar={voltar} />
+          <Trilha raiz="Alimentação" onVoltar={voltar} aqui="Consumo por insumo" />
           <Secao titulo="Quanto já foi usado de cada insumo" descricao="Soma de todos os tratos registrados.">
             {consumo.length === 0 && <Vazio>Nenhum trato registrado ainda.</Vazio>}
             {consumo
@@ -147,7 +141,7 @@ export default function Alimentacao() {
                   unidade={e.unidade}
                   alerta={baixo}
                   detalhes={[baixo ? 'Abaixo do mínimo: comprar' : `mínimo ${numero(e.minimo)} ${e.unidade}`]}
-                  onClick={() => abrir({ tipo: 'insumo', id: e.id })}
+                  onClick={() => abrir('insumo', e.id)}
                 />
               );
             })}
@@ -158,10 +152,10 @@ export default function Alimentacao() {
               titulo="Tratos"
               subtitulo="Corrigir ou apagar um trato"
               valor={numero(tratos.length)}
-              onClick={() => abrir({ tipo: 'tratos' })}
+              onClick={() => abrir('tratos')}
               dicaAcao="Ver todos os tratos"
             />
-            <Linha titulo="Consumo por insumo" subtitulo="Quanto já foi usado de cada um" onClick={() => abrir({ tipo: 'consumo' })} dicaAcao="Ver o consumo de cada insumo" />
+            <Linha titulo="Consumo por insumo" subtitulo="Quanto já foi usado de cada um" onClick={() => abrir('consumo')} dicaAcao="Ver o consumo de cada insumo" />
           </Secao>
         </>
       )}

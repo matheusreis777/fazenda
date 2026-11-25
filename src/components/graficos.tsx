@@ -8,6 +8,7 @@
 import clsx from 'clsx';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
+import { Icone, type NomeIcone } from '@/components/ui';
 import { marcasDoEixo } from '@/lib/painel';
 
 /** Cor da série N (1 a 6), na ordem fixa da paleta. */
@@ -300,12 +301,13 @@ export function BarrasDeitadas({ itens, corSerie = cor(1) }: { itens: { nome: st
   return (
     <ul className="flex flex-col gap-2.5">
       {ordenados.map((i) => (
-        <li key={i.nome} className="grid grid-cols-[minmax(0,8.5rem)_1fr] items-center gap-3 text-sm" title={`${i.nome}: ${i.texto}`}>
+        <li key={i.nome} className="grid grid-cols-[minmax(0,6rem)_1fr] items-center gap-3 text-sm sm:grid-cols-[minmax(0,8.5rem)_1fr]" title={`${i.nome}: ${i.texto}`}>
           <span className="truncate font-medium">{i.nome}</span>
           <span className="flex min-w-0 items-center gap-2">
+            {/* A barra maior ocupa o espaço que sobra depois de 6rem guardados para o valor (ex.: "R$ 123,4 mil"), então nada estoura no celular. */}
             <span
-              className="h-5 rounded-r-[4px] transition-opacity hover:opacity-80"
-              style={{ width: `${maior ? Math.max((i.valor / maior) * 78, 0.5) : 0}%`, background: corSerie }}
+              className="h-5 shrink-0 rounded-r-[4px] transition-opacity hover:opacity-80"
+              style={{ width: `calc((100% - 6rem) * ${maior ? Math.max(i.valor / maior, 0.005) : 0})`, background: corSerie }}
             />
             <span className="shrink-0 font-bold tabular-nums">{i.texto}</span>
           </span>
@@ -355,43 +357,68 @@ export function Segmentada({ partes, unidade }: { partes: { nome: string; valor:
   );
 }
 
-/** Mini-gráfico de tendência para os cartões: linha discreta, o ponto atual na cor de destaque. */
-export function Tendencia({ valores, rotulo }: { valores: number[]; rotulo: string }) {
+/** Mini-gráfico de tendência para os cartões: linha fina com área suave na cor do assunto, ponto no valor atual. */
+export function Tendencia({ valores, rotulo, corSerie = 'var(--texto-2)' }: { valores: number[]; rotulo: string; corSerie?: string }) {
   if (valores.length < 2) return null;
   const min = Math.min(...valores);
   const max = Math.max(...valores);
   const y = (v: number) => (max === min ? 15 : 27 - ((v - min) / (max - min)) * 24);
   const x = (i: number) => (i / (valores.length - 1)) * 100;
+  const pontos = valores.map((v, i) => `${x(i)},${y(v)}`).join(' ');
   return (
     <span className="relative block h-[30px] w-full" role="img" aria-label={rotulo}>
       <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
-        <polyline
-          points={valores.map((v, i) => `${x(i)},${y(v)}`).join(' ')}
-          fill="none"
-          stroke="var(--texto-2)"
-          strokeOpacity={0.6}
-          strokeWidth={1.5}
-          vectorEffect="non-scaling-stroke"
-          strokeLinejoin="round"
-        />
+        <polygon points={`0,30 ${pontos} 100,30`} fill={corSerie} opacity={0.12} />
+        <polyline points={pontos} fill="none" stroke={corSerie} strokeWidth={1.5} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
       </svg>
       <span
         aria-hidden="true"
         className="absolute size-2 -translate-1/2 rounded-full ring-2 ring-cartao"
-        style={{ left: '100%', top: `${(y(valores[valores.length - 1]) / 30) * 100}%`, background: 'var(--serie-1)' }}
+        style={{ left: '100%', top: `${(y(valores[valores.length - 1]) / 30) * 100}%`, background: corSerie }}
       />
     </span>
   );
 }
 
-/** Cartão branco de um gráfico: título, subtítulo opcional, legenda e o conteúdo. */
-export function CartaoGrafico({ titulo, subtitulo, acao, children, className }: { titulo: string; subtitulo?: string; acao?: ReactNode; children: ReactNode; className?: string }) {
+/** Selo redondo com o ícone do assunto, tingido com a cor dele (o ícone escurece no claro e clareia no escuro, para aparecer bem). */
+export function Selo({ icone, cor: corSelo, className }: { icone: NomeIcone; cor: string; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{ background: `color-mix(in oklab, ${corSelo} 18%, var(--cartao))`, color: `color-mix(in oklab, ${corSelo} 78%, var(--texto))` }}
+      className={clsx('flex size-9 shrink-0 items-center justify-center rounded-xl', className)}>
+      <Icone nome={icone} className="size-5" />
+    </span>
+  );
+}
+
+/** Cartão branco de um gráfico: selo opcional, título, subtítulo, ação à direita e o conteúdo. */
+export function CartaoGrafico({
+  titulo,
+  subtitulo,
+  acao,
+  icone,
+  cor: corSelo = 'var(--primaria)',
+  children,
+  className,
+}: {
+  titulo: string;
+  subtitulo?: string;
+  acao?: ReactNode;
+  icone?: NomeIcone;
+  cor?: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <section className={clsx('flex min-w-0 flex-col gap-4 rounded-2xl border border-borda bg-cartao p-5', className)}>
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[17px] font-bold">{titulo}</h2>
-          {subtitulo && <p className="text-sm font-medium text-texto-2">{subtitulo}</p>}
+        <div className="flex min-w-0 items-start gap-3">
+          {icone && <Selo icone={icone} cor={corSelo} />}
+          <div className="min-w-0">
+            <h2 className="text-[17px] font-bold">{titulo}</h2>
+            {subtitulo && <p className="text-sm font-medium text-texto-2">{subtitulo}</p>}
+          </div>
         </div>
         {acao}
       </div>

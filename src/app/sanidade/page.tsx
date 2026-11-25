@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { Formulario } from '@/components/formulario';
-import { CartaoGrupo, contem, Etiqueta, Grupos, Linha, Opcoes, Secao, Tela, Topo, usePaginacao, Vazio, Voltar } from '@/components/ui';
+import { CartaoGrupo, contem, Etiqueta, Grupos, Linha, Opcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
 import { criarLote, diaMes, dias, excluir, nomeLote, numero, proximosManejos, salvar, type Sanidade, somarDias, TIPOS_SANIDADE, type TipoSanidade, useDados } from '@/lib/dados';
 import { hojeIso } from '@/lib/formato';
 
@@ -11,8 +11,6 @@ const OPCOES_TIPO = (Object.keys(TIPOS_SANIDADE) as TipoSanidade[]).map((t) => (
 /** Quantos dias à frente a lista "A fazer" olha. */
 const JANELA_DIAS = 30;
 
-/** O que a tela mostra: os cartões de situação ou uma das listas. */
-type Vista = 'inicio' | 'atrasadas' | 'breve' | 'historico';
 
 export default function SanidadePage() {
   const { lotes, animais, sanidade } = useDados();
@@ -33,13 +31,13 @@ export default function SanidadePage() {
 
   const emBreve = aFazer.filter((s) => s.proxima_data! >= hoje);
   const [busca, setBusca] = useState('');
-  const [vista, setVista] = useState<Vista>('inicio');
-  const abrir = (v: Vista) => {
-    setVista(v);
+  // O que a tela mostra: ?atrasadas, ?breve, ?historico ou, sem nada, os cartões.
+  const { ver, abrir } = useVista(['atrasadas', 'breve', 'historico'], () => {
     setBusca('');
     setTipo(null);
-  };
-  const voltar = () => abrir('inicio');
+  });
+  const vista = ver ?? 'inicio';
+  const voltar = () => abrir();
 
   const termo = busca.trim();
   const temTermo = (s: Sanidade) => contem(s.produto, termo) || contem(alvo(s), termo);
@@ -79,7 +77,10 @@ export default function SanidadePage() {
       dicaAcao="Corrigir ou apagar esta aplicação"
     />
   );
-  const voltarBotao = <Voltar para="Voltar" onVoltar={voltar} />;
+  // Os nomes dos cartões do início, para a trilha bater com o que foi tocado.
+  const trilha = vista !== 'inicio' && (
+    <Trilha raiz="Sanidade" onVoltar={voltar} aqui={{ atrasadas: 'Atrasadas', breve: 'Para aplicar', historico: 'Já aplicadas' }[vista]} />
+  );
 
   return (
     <Tela>
@@ -98,7 +99,7 @@ export default function SanidadePage() {
       ) : vista === 'atrasadas' || vista === 'breve' ? (
         /* ---------- Doses marcadas ---------- */
         <>
-          {voltarBotao}
+          {trilha}
           <Secao
             titulo={vista === 'atrasadas' ? `Atrasadas (${lista.length})` : `Para aplicar nos próximos ${JANELA_DIAS} dias (${lista.length})`}
             descricao="Depois de aplicar, toque no item para registrar: ele sai da lista."
@@ -112,7 +113,7 @@ export default function SanidadePage() {
       ) : vista === 'historico' ? (
         /* ---------- Histórico ---------- */
         <>
-          {voltarBotao}
+          {trilha}
           <Secao
             titulo={`Histórico (${lista.length})`}
             descricao="Tudo o que já foi aplicado. Toque para corrigir ou apagar."

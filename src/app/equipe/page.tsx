@@ -3,12 +3,9 @@
 import { useState } from 'react';
 
 import { Formulario } from '@/components/formulario';
-import { Botao, Cartao, CartaoGrupo, contem, Etiqueta, Grade, Grupos, Linha, MenuAcoes, Secao, Tela, Topo, usePaginacao, Vazio, Voltar } from '@/components/ui';
+import { Botao, Cartao, CartaoGrupo, contem, Etiqueta, Grade, Grupos, Linha, MenuAcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
 import { diaMes, excluir, type Funcionario, funcionarioEmUso, type Maquina, maquinaEmUso, numero, numeroCurto, reais, salvar, useDados } from '@/lib/dados';
 import { hojeIso, num, numParaTexto } from '@/lib/formato';
-
-/** O que a tela mostra: os cartões, um funcionário ou máquina, os que saíram ou as máquinas paradas. */
-type Vista = { tipo: 'inicio' } | { tipo: 'func'; id: number } | { tipo: 'maq'; id: number } | { tipo: 'saidos' } | { tipo: 'parados' };
 
 /** Funcionários e máquinas, com o quanto cada um custou (despesas ligadas a ele). */
 export default function Equipe() {
@@ -19,12 +16,9 @@ export default function Equipe() {
 
   const [escolhendo, setEscolhendo] = useState(false);
   const [busca, setBusca] = useState('');
-  const [vista, setVista] = useState<Vista>({ tipo: 'inicio' });
-  const abrir = (v: Vista) => {
-    setVista(v);
-    setBusca('');
-  };
-  const voltar = () => abrir({ tipo: 'inicio' });
+  // O que a tela mostra: ?func=ID, ?maq=ID, ?saidos, ?parados ou, sem nada, os cartões.
+  const { ver, id, abrir } = useVista(['func', 'maq', 'saidos', 'parados'], () => setBusca(''));
+  const voltar = () => abrir();
 
   const ano = hojeIso().slice(0, 4);
   const soma = (xs: { valor: number }[]) => xs.reduce((s, d) => s + d.valor, 0);
@@ -38,9 +32,9 @@ export default function Equipe() {
   const termo = busca.trim();
   const achaFunc = (f: Funcionario) => contem(f.nome, termo) || contem(f.funcao, termo);
   const achaMaq = (m: Maquina) => contem(m.nome, termo) || contem(m.tipo, termo) || contem(m.identificacao, termo);
-  const pessoa = vista.tipo === 'func' ? funcionarios.find((f) => f.id === vista.id) : undefined;
-  const maquina = vista.tipo === 'maq' ? maquinas.find((m) => m.id === vista.id) : undefined;
-  const noInicio = !pessoa && !maquina && vista.tipo !== 'saidos' && vista.tipo !== 'parados';
+  const pessoa = ver === 'func' ? funcionarios.find((f) => String(f.id) === id) : undefined;
+  const maquina = ver === 'maq' ? maquinas.find((m) => String(m.id) === id) : undefined;
+  const noInicio = !pessoa && !maquina && ver !== 'saidos' && ver !== 'parados';
   // Gastos lançados no Financeiro com o funcionário ou a máquina aberta; a busca procura na descrição.
   const ligados = despesas.filter((d) => (pessoa && d.funcionario_id === pessoa.id) || (maquina && d.maquina_id === maquina.id));
   const listaGastos = ligados.filter((d) => contem(d.descricao, termo));
@@ -52,7 +46,7 @@ export default function Equipe() {
       subtitulo={[f.funcao, `${reais(gastoFunc(f.id))} em ${ano}`].filter(Boolean).join(' · ')}
       etiqueta={!f.ativo && <Etiqueta texto="Saiu" />}
       apagada={!f.ativo}
-      onClick={() => abrir({ tipo: 'func', id: f.id })}
+      onClick={() => abrir('func', f.id)}
       dicaAcao="Ver os gastos deste funcionário"
     />
   );
@@ -63,7 +57,7 @@ export default function Equipe() {
       subtitulo={[m.tipo, m.identificacao, `${reais(gastoMaq(m.id))} em ${ano}`].filter(Boolean).join(' · ')}
       etiqueta={!m.ativo && <Etiqueta texto="Fora de uso" />}
       apagada={!m.ativo}
-      onClick={() => abrir({ tipo: 'maq', id: m.id })}
+      onClick={() => abrir('maq', m.id)}
       dicaAcao="Ver os gastos desta máquina"
     />
   );
@@ -72,13 +66,13 @@ export default function Equipe() {
     ? termo
       ? [...funcionarios.filter(achaFunc).map(linhaFunc), ...maquinas.filter(achaMaq).map(linhaMaq)]
       : []
-    : vista.tipo === 'saidos'
+    : ver === 'saidos'
       ? funcionarios.filter((f) => !f.ativo && achaFunc(f)).map(linhaFunc)
-      : vista.tipo === 'parados'
+      : ver === 'parados'
         ? maquinas.filter((m) => !m.ativo && achaMaq(m)).map(linhaMaq)
         : [];
-  const pagLinhas = usePaginacao(linhas, [termo, vista]);
-  const pagGastos = usePaginacao(listaGastos, [termo, vista]);
+  const pagLinhas = usePaginacao(linhas, [termo, ver, id]);
+  const pagGastos = usePaginacao(listaGastos, [termo, ver, id]);
 
   const AVISO_FINANCEIRO = 'Para um gasto contar aqui, lance no Financeiro com a categoria Funcionários ou Maquinário e escolha de quem ou de qual máquina é.';
 
@@ -105,8 +99,8 @@ export default function Equipe() {
       ) : pessoa || maquina ? (
         /* ---------- Um funcionário ou uma máquina ---------- */
         <>
-          <Voltar
-            para="Equipe e máquinas"
+          <Trilha
+            raiz="Equipe e máquinas"
             onVoltar={voltar}
             titulo={(pessoa ?? maquina)!.nome}
             descricao={
@@ -128,15 +122,15 @@ export default function Equipe() {
             ))}
           </Secao>
         </>
-      ) : vista.tipo === 'saidos' || vista.tipo === 'parados' ? (
+      ) : ver === 'saidos' || ver === 'parados' ? (
         /* ---------- Quem saiu / máquinas paradas ---------- */
         <>
-          <Voltar para="Equipe e máquinas" onVoltar={voltar} />
+          <Trilha raiz="Equipe e máquinas" onVoltar={voltar} aqui={ver === 'saidos' ? 'Funcionários que saíram' : 'Máquinas fora de uso'} />
           <Secao
-            titulo={vista.tipo === 'saidos' ? `Funcionários que saíram (${linhas.length})` : `Máquinas fora de uso (${linhas.length})`}
+            titulo={ver === 'saidos' ? `Funcionários que saíram (${linhas.length})` : `Máquinas fora de uso (${linhas.length})`}
             descricao="O histórico de gastos fica guardado. Toque para ver ou mudar os dados."
             rodape={pagLinhas.controles}>
-            {linhas.length === 0 && <Vazio>{vista.tipo === 'saidos' ? 'Nenhum funcionário saiu.' : 'Nenhuma máquina fora de uso.'}</Vazio>}
+            {linhas.length === 0 && <Vazio>{ver === 'saidos' ? 'Nenhum funcionário saiu.' : 'Nenhuma máquina fora de uso.'}</Vazio>}
             {pagLinhas.itens}
           </Secao>
         </>
@@ -151,7 +145,7 @@ export default function Equipe() {
                 valor={numeroCurto(gastoFunc(f.id))}
                 unidade={`reais em ${ano}`}
                 detalhes={[f.funcao, !!f.salario && `salário ${reais(f.salario)}`]}
-                onClick={() => abrir({ tipo: 'func', id: f.id })}
+                onClick={() => abrir('func', f.id)}
               />
             ))}
           </Grupos>
@@ -164,7 +158,7 @@ export default function Equipe() {
                 valor={numeroCurto(gastoMaq(m.id))}
                 unidade={`reais em ${ano}`}
                 detalhes={[[m.tipo, m.identificacao].filter(Boolean).join(' · ')]}
-                onClick={() => abrir({ tipo: 'maq', id: m.id })}
+                onClick={() => abrir('maq', m.id)}
               />
             ))}
           </Grupos>
@@ -174,14 +168,14 @@ export default function Equipe() {
               titulo="Funcionários que saíram"
               subtitulo="O histórico fica guardado"
               valor={numero(funcionarios.length - ativosFunc.length)}
-              onClick={() => abrir({ tipo: 'saidos' })}
+              onClick={() => abrir('saidos')}
               dicaAcao="Ver os funcionários que saíram"
             />
             <Linha
               titulo="Máquinas fora de uso"
               subtitulo="Vendidas ou paradas"
               valor={numero(maquinas.length - ativasMaq.length)}
-              onClick={() => abrir({ tipo: 'parados' })}
+              onClick={() => abrir('parados')}
               dicaAcao="Ver as máquinas fora de uso"
             />
           </Secao>

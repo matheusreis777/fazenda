@@ -2,19 +2,27 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 
 // Componentes de interface feitos à mão. As cores vêm da paleta em src/app/globals.css.
 
 const ICONES = {
   inicio: <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />,
+  // Cabeça de boi: chifres, orelhas e focinho.
   rebanho: (
     <>
-      <circle cx="6.5" cy="10" r="1.8" />
-      <circle cx="10" cy="6" r="1.8" />
-      <circle cx="14" cy="6" r="1.8" />
-      <circle cx="17.5" cy="10" r="1.8" />
-      <path d="M12 11c-2.5 0-5 2.6-5 5.2 0 1.6 1.2 2.6 2.7 2.6.9 0 1.5-.4 2.3-.4s1.4.4 2.3.4c1.5 0 2.7-1 2.7-2.6 0-2.6-2.5-5.2-5-5.2z" />
+      <path d="M7.5 7h9l-.6 6.2-1.4 6.2a1.6 1.6 0 0 1-1.6 1.3h-1.8a1.6 1.6 0 0 1-1.6-1.3L8.1 13.2z" />
+      <path d="M7.5 7C5.6 6.6 4.4 5.2 4.2 3.4M16.5 7c1.9-.4 3.1-1.8 3.3-3.6" />
+      <path d="M7.9 9.4 3.6 8.6c.3 1.6 1.7 2.6 4.4 2.6M16.1 9.4l4.3-.8c-.3 1.6-1.7 2.6-4.4 2.6" />
+      <path d="M10.6 17.6h.01M13.4 17.6h.01" />
+    </>
+  ),
+  peso: <path d="M12 4v16M6 20h12M5 8h14M7 8l-3 6a3 3 0 0 0 6 0zm10 0-3 6a3 3 0 0 0 6 0z" />,
+  ok: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12.5 2.8 2.8L16 10" />
     </>
   ),
   alimentacao: <path d="M12 21v-8m0 0c0-4 3-7 8-7 0 5-3 8-8 7zm0 2c0-3-2-5-7-5 0 4 3 6 7 5z" />,
@@ -49,6 +57,12 @@ const ICONES = {
     </>
   ),
   relatorios: <path d="M4 20V10m6 10V4m6 16v-7m5 7H3" />,
+  perfil: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
+    </>
+  ),
   mais: (
     <>
       <circle cx="5" cy="12" r="1.3" />
@@ -83,7 +97,7 @@ export function Tela({ children }: { children: ReactNode }) {
 // ---------------------------------------------------------------------------------------------
 // Layout das telas de cadastro (o padrão do Rebanho):
 //   Topo (busca + botão principal + resumo) → Grupos de cartões que abrem listas → "Mais" (Secao de Linhas).
-//   Dentro de uma lista: Voltar (botão + título) → Grade de números → Secao com a lista.
+//   Dentro de uma lista: Trilha (Rebanho › Pasto da Sede + título) → Grade de números → Secao com a lista.
 
 /** Topo fixo da tela: busca e botão principal lado a lado, com uma linha de resumo embaixo. */
 export function Topo({
@@ -183,11 +197,68 @@ export function CartaoGrupo({
   );
 }
 
-/** Começo de uma lista aberta: botão de voltar e, se tiver, título com ação ao lado (ex.: "Editar lote"). */
-export function Voltar({ para, onVoltar, titulo, descricao, acao }: { para: string; onVoltar: () => void; titulo?: string; descricao?: string | null; acao?: ReactNode }) {
+/**
+ * Sub-tela aberta de uma seção, guardada no endereço: /rebanho?lote=3, /rebanho?saidas. Assim o voltar do
+ * celular volta um nível, recarregar mantém a sub-tela e a aba do menu (sem nada depois do ?) volta ao início.
+ * `vistas` são os nomes aceitos; qualquer outra coisa no endereço vale como início (ver = null).
+ * `aoMudar` roda sempre que a sub-tela muda, venha de onde vier (toque, voltar, menu): é onde a tela limpa
+ * a busca e os filtros.
+ */
+export function useVista<V extends string>(vistas: readonly V[], aoMudar: () => void) {
+  const params = useSearchParams();
+  const ver = vistas.find((v) => params.has(v)) ?? null;
+  const id = ver ? params.get(ver) : null;
+  // Ajuste durante a renderização (mesmo padrão da usePaginacao).
+  const chave = `${ver}=${id}`;
+  const [anterior, setAnterior] = useState(chave);
+  if (chave !== anterior) {
+    setAnterior(chave);
+    aoMudar();
+  }
+  /** Abre a sub-tela; sem argumentos, volta ao início. Entra no histórico, então o voltar do celular desfaz. */
+  const abrir = (v?: V, novoId?: number | string) => {
+    const url = v ? `?${v}${novoId === undefined ? '' : `=${encodeURIComponent(novoId)}`}` : window.location.pathname;
+    window.history.pushState(null, '', url);
+  };
+  return { ver, id, abrir };
+}
+
+/**
+ * Começo de uma lista aberta: a trilha "Rebanho › Pasto da Sede" (tocar no primeiro volta) e, se tiver,
+ * título com ação ao lado (ex.: "Editar lote"). `aqui` é o nome na trilha; sem ele, vale o título.
+ */
+export function Trilha({
+  raiz,
+  onVoltar,
+  aqui,
+  titulo,
+  descricao,
+  acao,
+}: {
+  raiz: string;
+  onVoltar: () => void;
+  aqui?: string;
+  titulo?: string;
+  descricao?: string | null;
+  acao?: ReactNode;
+}) {
   return (
     <>
-      <Botao titulo={`‹ ${para}`} secundario onClick={onVoltar} className="self-start" />
+      <nav aria-label="Você está em" className="print:hidden">
+        <ol className="flex flex-wrap items-center gap-x-2 text-base font-semibold">
+          <li className="flex items-center gap-2">
+            <button type="button" onClick={onVoltar} className="cursor-pointer py-1.5 text-texto-2 underline underline-offset-4 hover:text-texto">
+              {raiz}
+            </button>
+            <span aria-hidden="true" className="text-texto-2">
+              ›
+            </span>
+          </li>
+          <li aria-current="page" className="min-w-0 truncate py-1.5">
+            {aqui ?? titulo}
+          </li>
+        </ol>
+      </nav>
       {titulo && (
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -201,10 +272,16 @@ export function Voltar({ para, onVoltar, titulo, descricao, acao }: { para: stri
   );
 }
 
-/** Linha de cartões que quebra sozinha conforme a largura. */
+/** Linha de cartões que quebra sozinha conforme a largura (celular pequeno: um por linha, para o valor caber). */
 export function Grade({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fit,minmax(9rem,1fr))]">{children}</div>;
+  return <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">{children}</div>;
 }
+
+/**
+ * Valores do Intl ("R$ 1.234,56", "12 mil") vêm com espaço que não quebra. Nos cartões estreitos do celular,
+ * trocar por espaço comum deixa o número descer para a linha de baixo em vez de estourar o cartão.
+ */
+export const quebravel = (texto: string) => texto.replace(/ /g, ' ');
 
 /** Cartão de número-resumo. Com `href` vira atalho para a tela do assunto. */
 export function Cartao({
@@ -222,7 +299,7 @@ export function Cartao({
   alerta?: boolean;
   href?: string;
 }) {
-  const classe = 'flex flex-col gap-0.5 rounded-2xl border border-borda bg-cartao p-4 text-left';
+  const classe = 'flex min-w-0 flex-col gap-0.5 rounded-2xl border border-borda bg-cartao p-4 text-left break-words';
   const conteudo = (
     <>
       <div className="flex min-h-8 items-center justify-between gap-2">
@@ -237,7 +314,7 @@ export function Cartao({
           </span>
         )}
       </div>
-      <span className={clsx('text-xl font-bold', alerta && 'text-alerta')}>{valor}</span>
+      <span className={clsx('text-xl font-bold', alerta && 'text-alerta')}>{quebravel(valor)}</span>
       {detalhe && <span className="text-sm font-medium text-texto-2">{detalhe}</span>}
     </>
   );
@@ -368,11 +445,13 @@ export function Linha({
           {marca}
         </span>
       )}
-      <span className="flex min-w-0 flex-1 flex-col">
+      {/* Título e valor dividem o aperto (flex-auto): no celular os dois quebram linha em vez de um esmagar o outro.
+          O valor só encolhe até o maior pedaço que não quebra (ex.: "R$ 1.500,00"), então dinheiro não parte no meio. */}
+      <span className="flex min-w-0 flex-auto flex-col break-words">
         <span className="font-semibold">{titulo}</span>
         {subtitulo && <span className="text-sm font-medium text-texto-2">{subtitulo}</span>}
       </span>
-      <span className="flex shrink-0 flex-col items-end gap-0.5">
+      <span className="flex flex-col items-end gap-0.5 text-right">
         {valor && <span className={clsx('text-[15px] font-bold', alerta && 'text-alerta')}>{valor}</span>}
         {etiqueta}
       </span>
@@ -480,8 +559,9 @@ export function Chip({ titulo, ativo, onClick }: { titulo: string; ativo: boolea
       type="button"
       aria-pressed={ativo}
       onClick={onClick}
+      // shrink-0: na faixa que rola não espreme; max-w-full: nome comprido (ex.: insumo no formulário) quebra linha em vez de estourar.
       className={clsx(
-        'cursor-pointer rounded-lg border px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-opacity hover:opacity-80',
+        'max-w-full shrink-0 cursor-pointer rounded-lg border px-4 py-1.5 text-sm font-medium break-words transition-opacity hover:opacity-80',
         ativo ? 'border-primaria bg-primaria text-sobre-primaria' : 'border-borda bg-cartao text-texto',
       )}>
       {titulo}

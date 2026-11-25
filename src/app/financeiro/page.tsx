@@ -3,14 +3,11 @@
 import { useState } from 'react';
 
 import { type Campo, Formulario, type Valores } from '@/components/formulario';
-import { Botao, Cartao, CartaoGrupo, contem, Etiqueta, Grade, Grupos, Linha, Opcoes, Secao, Tela, Topo, usePaginacao, Vazio, Voltar } from '@/components/ui';
+import { Botao, Cartao, CartaoGrupo, contem, Etiqueta, Grade, Grupos, Linha, Opcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
 import { CATEGORIAS, type Categoria, type Despesa, diaMes, excluir, mesIso, nomeMes, numero, numeroCurto, reais, type Recorrente, salvar, useDados } from '@/lib/dados';
 import { num, numParaTexto } from '@/lib/formato';
 
 const OPCOES_CATEGORIA = (Object.keys(CATEGORIAS) as Categoria[]).map((c) => ({ valor: c, rotulo: CATEGORIAS[c] }));
-
-/** O que a tela mostra: os cartões das categorias, os gastos de uma categoria ou os gastos fixos. */
-type Vista = { tipo: 'inicio' } | { tipo: 'categoria'; categoria: Categoria } | { tipo: 'fixos' };
 
 export default function Financeiro() {
   const { despesas, recorrentes, estoque, funcionarios, maquinas } = useDados();
@@ -62,13 +59,12 @@ export default function Financeiro() {
   const mes = mesIso(deslocamento);
   const [busca, setBusca] = useState('');
   const [situacaoFixo, setSituacaoFixo] = useState<'' | 'ativos' | 'pausados'>('');
-  const [vista, setVista] = useState<Vista>({ tipo: 'inicio' });
-  const abrir = (v: Vista) => {
-    setVista(v);
+  // O que a tela mostra: ?categoria=CHAVE, ?fixos ou, sem nada, os cartões das categorias.
+  const { ver, id, abrir } = useVista(['categoria', 'fixos'], () => {
     setBusca('');
     setSituacaoFixo('');
-  };
-  const voltar = () => abrir({ tipo: 'inicio' });
+  });
+  const voltar = () => abrir();
 
   const soma = (xs: { valor: number }[]) => xs.reduce((s, d) => s + d.valor, 0);
   const doMes = despesas.filter((d) => d.data.startsWith(mes));
@@ -76,12 +72,13 @@ export default function Financeiro() {
 
   const termo = busca.trim();
   const temTermo = (d: Despesa | Recorrente) => contem(d.descricao, termo) || contem(nomeVinculo(d), termo);
-  const catAberta = vista.tipo === 'categoria' ? vista.categoria : null;
-  const noInicio = vista.tipo === 'inicio';
+  // A categoria vem do endereço: só vale se for uma das que existem.
+  const catAberta = ver === 'categoria' ? ((Object.keys(CATEGORIAS) as Categoria[]).find((c) => c === id) ?? null) : null;
+  const noInicio = !catAberta && ver !== 'fixos';
   const daCategoria = catAberta ? doMes.filter((d) => d.categoria === catAberta) : doMes;
   const lista = daCategoria.filter(temTermo);
   const fixos = recorrentes.filter((r) => (situacaoFixo === '' || r.ativo === (situacaoFixo === 'ativos')) && temTermo(r));
-  const pagDespesas = usePaginacao(lista, [mes, vista, termo]);
+  const pagDespesas = usePaginacao(lista, [mes, ver, id, termo]);
   const pagRecorrentes = usePaginacao(fixos, [situacaoFixo, termo]);
 
   const linhaGasto = (d: Despesa) => (
@@ -102,8 +99,9 @@ export default function Financeiro() {
       <p className="text-center text-sm font-semibold text-texto-2">Mostrando os gastos de</p>
       <p className="-mt-2 text-center text-xl font-bold">{nomeMes(mes)}</p>
       <div className="flex w-full items-center justify-between gap-2">
-        <Botao titulo="‹ Mês anterior" secundario onClick={() => setDeslocamento(deslocamento - 1)} />
-        <Botao titulo="Próximo mês ›" secundario onClick={() => setDeslocamento(deslocamento + 1)} />
+        {/* Texto curto para os dois caberem lado a lado no celular; o mês aparece logo acima. */}
+        <Botao titulo="‹ Anterior" rotuloAcessivel="Mês anterior" secundario onClick={() => setDeslocamento(deslocamento - 1)} />
+        <Botao titulo="Próximo ›" rotuloAcessivel="Próximo mês" secundario onClick={() => setDeslocamento(deslocamento + 1)} />
       </div>
       {deslocamento !== 0 && (
         <button type="button" onClick={() => setDeslocamento(0)} className="cursor-pointer text-sm font-bold text-texto-2 underline hover:opacity-80">
@@ -119,7 +117,7 @@ export default function Financeiro() {
       <Topo
         busca={busca}
         onBusca={setBusca}
-        dica={vista.tipo === 'fixos' ? 'Procurar gasto fixo' : 'Procurar gasto (ex.: diesel)'}
+        dica={ver === 'fixos' ? 'Procurar gasto fixo' : 'Procurar gasto (ex.: diesel)'}
         novo="+ Gasto"
         rotuloNovo="Lançar gasto"
         onNovo={() => setFormDespesa({ categoria: catAberta ?? undefined })}>
@@ -141,7 +139,7 @@ export default function Financeiro() {
       ) : catAberta ? (
         /* ---------- Dentro de uma categoria ---------- */
         <>
-          <Voltar para="Todas as categorias" onVoltar={voltar} titulo={CATEGORIAS[catAberta]} />
+          <Trilha raiz="Financeiro" onVoltar={voltar} titulo={CATEGORIAS[catAberta]} />
           {seletorMes}
           <Grade>
             <Cartao rotulo="Total no mês" valor={reais(soma(daCategoria))} detalhe={`${numero(daCategoria.length)} lançamentos`} />
@@ -156,10 +154,10 @@ export default function Financeiro() {
             {pagDespesas.itens.map(linhaGasto)}
           </Secao>
         </>
-      ) : vista.tipo === 'fixos' ? (
+      ) : ver === 'fixos' ? (
         /* ---------- Gastos fixos ---------- */
         <>
-          <Voltar para="Todas as categorias" onVoltar={voltar} />
+          <Trilha raiz="Financeiro" onVoltar={voltar} aqui="Gastos fixos" />
           <Secao
             titulo={`Gastos fixos (${fixos.length})`}
             descricao="Salários, energia, internet… São lançados sozinhos todo mês, no dia do vencimento. Toque para mudar, pausar ou excluir."
@@ -209,7 +207,7 @@ export default function Financeiro() {
                   valor={numeroCurto(soma(daCat))}
                   unidade="reais"
                   detalhes={[daCat.length === 0 ? 'nenhum lançamento' : `${numero(daCat.length)} ${daCat.length === 1 ? 'lançamento' : 'lançamentos'}`]}
-                  onClick={() => abrir({ tipo: 'categoria', categoria: c })}
+                  onClick={() => abrir('categoria', c)}
                 />
               );
             })}
@@ -220,7 +218,7 @@ export default function Financeiro() {
               titulo="Gastos fixos (todo mês)"
               subtitulo="Salários, energia, internet… lançados sozinhos"
               valor={`${reais(totalRecorrente)}/mês`}
-              onClick={() => abrir({ tipo: 'fixos' })}
+              onClick={() => abrir('fixos')}
               dicaAcao="Ver e mudar os gastos fixos"
             />
           </Secao>

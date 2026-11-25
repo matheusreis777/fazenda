@@ -92,6 +92,8 @@ export type Funcionario = {
   ativo: boolean;
 };
 export type Maquina = { id: number; nome: string; tipo: string | null; identificacao: string | null; ano: number | null; ativo: boolean };
+/** Dados da própria fazenda: no banco é uma linha só, sempre com id 1 (ver supabase/migrations/0005_fazenda.sql). */
+export type Fazenda = { id: 1; nome: string };
 
 export type Base = {
   lotes: Lote[];
@@ -104,6 +106,7 @@ export type Base = {
   sanidade: Sanidade[];
   funcionarios: Funcionario[];
   maquinas: Maquina[];
+  fazenda: Fazenda[];
 };
 
 const semSaida = { saida_data: null, saida_tipo: null, saida_valor: null } as const;
@@ -184,6 +187,7 @@ const EXEMPLO: Base = {
     { id: 1, nome: 'Trator', tipo: 'Trator', identificacao: 'Massey Ferguson 4275', ano: 2015, ativo: true },
     { id: 2, nome: 'Carreta', tipo: 'Implemento', identificacao: null, ano: 2018, ativo: true },
   ],
+  fazenda: [{ id: 1, nome: 'Fazenda Boa Esperança' }],
 };
 
 const maisRecentePrimeiro = (a: { data: string; id: number }, b: { data: string; id: number }) =>
@@ -200,6 +204,7 @@ export const BASE_VAZIA: Base = {
   sanidade: [],
   funcionarios: [],
   maquinas: [],
+  fazenda: [],
 };
 
 let base: Base = EXEMPLO;
@@ -241,6 +246,8 @@ function derivar(b: Base) {
     sanidade: [...b.sanidade].sort(maisRecentePrimeiro),
     funcionarios: [...b.funcionarios].sort((x, y) => Number(y.ativo) - Number(x.ativo) || x.nome.localeCompare(y.nome, 'pt-BR')),
     maquinas: [...b.maquinas].sort((x, y) => Number(y.ativo) - Number(x.ativo) || x.nome.localeCompare(y.nome, 'pt-BR')),
+    /** '' enquanto ninguém deu nome; as telas mostram "Fazenda" no lugar. */
+    nomeFazenda: b.fazenda[0]?.nome.trim() ?? '',
   };
 }
 

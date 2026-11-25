@@ -3,7 +3,7 @@
 /* Tema escuro pela classe `dark` no <html> (ver src/lib/tema.ts), não só pela preferência do sistema. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Paleta neutra (preto, branco e cinzas); cor só para alerta.
+/* Paleta neutra (preto, branco e cinzas); cor só para alerta e para o destaque escolhido (mais abaixo).
    Para mudar o visual, troque os valores aqui — os componentes usam só estes nomes. */
 :root {
   color-scheme: light;
@@ -13,9 +13,6 @@
   --texto: #0a0a0a;
   --texto-2: #666666; /* texto secundário */
   --borda: #e4e4e4;
-  --primaria: #111111; /* botões, barras, destaque */
-  --sobre-primaria: #ffffff; /* texto por cima de primaria */
-  --primaria-suave: #f0f0f0;
   --alerta: #c62828;
   --alerta-suave: #fdecec;
   /* Gráficos: paleta categórica validada (dataviz) na ordem fixa, e as linhas de apoio. */
@@ -38,9 +35,6 @@
   --texto: #f5f5f5;
   --texto-2: #a3a3a3;
   --borda: #262626;
-  --primaria: #f5f5f5;
-  --sobre-primaria: #0a0a0a;
-  --primaria-suave: #1f1f1f;
   --alerta: #ff8a80;
   --alerta-suave: #3a1a1a;
   --serie-1: #3987e5;
@@ -53,6 +47,22 @@
   --eixo: #383838;
   --sobe-bom: #0ca30c;
 }
+
+/* Cor de destaque: botões, item ativo do menu, etiquetas, barras. primaria = a cor; sobre-primaria = texto por cima dela;
+   primaria-suave = fundo claro do item ativo. Escolhida em Perfil e configurações e guardada no atributo data-cor do
+   <html> (ver src/lib/tema.ts); sem o atributo, vale a padrão. O mesmo atributo num elemento pinta só ele (as amostras).
+   Contraste conferido (≥ 4,5:1) nos dois temas. Para uma cor nova: um par de linhas aqui e o nome em CORES no tema.ts.
+   Ordem importa: a padrão primeiro, para as outras cores passarem por cima dela. */
+:root, [data-cor='padrao'] { --primaria: #111111; --sobre-primaria: #ffffff; --primaria-suave: #f0f0f0; }
+.dark, .dark [data-cor='padrao'] { --primaria: #f5f5f5; --sobre-primaria: #0a0a0a; --primaria-suave: #1f1f1f; }
+[data-cor='verde'] { --primaria: #1e6b3a; --sobre-primaria: #ffffff; --primaria-suave: #e5f1e9; }
+.dark[data-cor='verde'], .dark [data-cor='verde'] { --primaria: #6cc990; --sobre-primaria: #0a0a0a; --primaria-suave: #16281d; }
+[data-cor='azul'] { --primaria: #1a5fb4; --sobre-primaria: #ffffff; --primaria-suave: #e6eefa; }
+.dark[data-cor='azul'], .dark [data-cor='azul'] { --primaria: #7aaef0; --sobre-primaria: #0a0a0a; --primaria-suave: #16233a; }
+[data-cor='terra'] { --primaria: #8a4a1c; --sobre-primaria: #ffffff; --primaria-suave: #f4ebe3; }
+.dark[data-cor='terra'], .dark [data-cor='terra'] { --primaria: #dca674; --sobre-primaria: #0a0a0a; --primaria-suave: #2c2017; }
+[data-cor='roxo'] { --primaria: #6a3fa8; --sobre-primaria: #ffffff; --primaria-suave: #efe9f8; }
+.dark[data-cor='roxo'], .dark [data-cor='roxo'] { --primaria: #b79cec; --sobre-primaria: #0a0a0a; --primaria-suave: #241c35; }
 
 /* Expõe a paleta como cores do Tailwind: bg-fundo, text-texto-2, border-borda… */
 @theme inline {
@@ -78,12 +88,18 @@
   --color-sobe-bom: var(--sobe-bom);
 }
 
-/* Formulários entram deslizando pela direita (classe animate-gaveta). */
+/* Formulários entram deslizando pela direita (classe animate-gaveta); nuvens da ilustração do Início passeiam (animate-nuvem). */
 @theme {
   --animate-gaveta: gaveta 200ms ease-out;
   @keyframes gaveta {
     from {
       transform: translateX(100%);
+    }
+  }
+  --animate-nuvem: nuvem 26s ease-in-out infinite alternate;
+  @keyframes nuvem {
+    to {
+      transform: translateX(48px);
     }
   }
 }

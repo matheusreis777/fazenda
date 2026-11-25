@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { type Campo, Formulario, type Valores } from '@/components/formulario';
-import { type Acao, Botao, CartaoGrupo, Confirmacao, contem, Etiqueta, Girando, Grupos, Linha, MenuAcoes, Secao, Tela, Topo, usePaginacao, Vazio, Voltar } from '@/components/ui';
+import { type Acao, Botao, CartaoGrupo, Confirmacao, contem, Etiqueta, Girando, Grupos, Linha, MenuAcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
 import { type Conta, executar, listarContas } from '@/lib/admin';
 import { diaMes, numero, useDados } from '@/lib/dados';
 
@@ -17,7 +17,7 @@ const CAMPO_SENHA: Campo = {
   chave: 'senha',
   rotulo: 'Senha provisória',
   dica: 'Ex.: fazenda2026',
-  ajuda: `Pelo menos ${SENHA_MINIMA} letras ou números. Passe para a pessoa e peça para ela trocar depois (botão “Trocar senha” no topo).`,
+  ajuda: `Pelo menos ${SENHA_MINIMA} letras ou números. Passe para a pessoa e peça para ela trocar depois (em “Perfil e configurações”).`,
 };
 const senhaCurta = (v: Valores) => (v.senha.length < SENHA_MINIMA ? `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` : null);
 
@@ -37,11 +37,9 @@ export default function Desenvolvedor() {
   const [criando, setCriando] = useState(false);
   // Antes do retorno antecipado abaixo: hooks não podem depender de condição.
   const [busca, setBusca] = useState('');
-  const [vista, setVista] = useState<Vista>('inicio');
-  const abrir = (v: Vista) => {
-    setVista(v);
-    setBusca('');
-  };
+  // A lista aberta fica no endereço: ?pendentes, ?aprovadas, ?dev, ?todas ou, sem nada, os cartões.
+  const { ver, abrir } = useVista(['pendentes', 'aprovadas', 'dev', 'todas'], () => setBusca(''));
+  const vista: Vista = ver ?? 'inicio';
   const termo = busca.trim();
   const todas = contas ?? [];
   const grupos: Record<Vista, Conta[]> = {
@@ -155,7 +153,7 @@ export default function Desenvolvedor() {
         ) : (
           /* ---------- Uma lista de contas (ou o resultado da busca) ---------- */
           <>
-            {vista !== 'inicio' && <Voltar para="Voltar" onVoltar={() => abrir('inicio')} />}
+            {vista !== 'inicio' && <Trilha raiz="Desenvolvedor" onVoltar={() => abrir()} aqui={TITULOS[vista]} />}
             <Secao
               titulo={`${vista === 'inicio' ? `Contas com “${termo}”` : TITULOS[vista]} (${lista.length})`}
               descricao="Toque em uma conta para aprovar, bloquear, trocar a senha ou excluir."

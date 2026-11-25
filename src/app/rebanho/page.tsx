@@ -1,9 +1,10 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { type Campo, Formulario, type Valores } from '@/components/formulario';
-import { Botao, Cartao, CartaoGrupo, Confirmacao, Etiqueta, Grade, Grupos, Linha, MenuAcoes, Opcoes, Secao, Tela, Topo, usePaginacao, Vazio, Voltar } from '@/components/ui';
+import { Botao, Cartao, CartaoGrupo, Confirmacao, Etiqueta, Grade, Grupos, Linha, MenuAcoes, Opcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
 import { type Animal, criarLote, diaMes, evolucaoPeso, excluir, type Lote, loteEmUso, nomeLote, numero, type Pesagem, reais, salvar, useDados } from '@/lib/dados';
 import { num, numParaTexto, textoPeso } from '@/lib/formato';
 
@@ -50,17 +51,30 @@ type Aberto =
   | null;
 
 /** O que a tela mostra: os cartões dos lotes, os animais de um lote, os que saíram ou as pesagens. */
-type Vista = { tipo: 'lotes' } | { tipo: 'lote'; id: number } | { tipo: 'saidas' } | { tipo: 'pesagens' };
-
 const media = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
 
 export default function Rebanho() {
   const { lotes, animais, pesagens } = useDados();
+  const router = useRouter();
+  /** Primeira opção do menu do animal, para quem tem ou já teve o animal. */
+  const verCertidao = (a: Animal) => ({
+    titulo: 'Ver certidão',
+    descricao: 'Tudo sobre o animal num documento: entrada, pesos, sanidade, saída e valores. Dá para imprimir ou salvar em PDF.',
+    onClick: () => router.push(`/rebanho/certidao?animal=${a.id}`),
+  });
   const [aberto, setAberto] = useState<Aberto>(null);
   const fechar = () => setAberto(null);
   const [busca, setBusca] = useState('');
-  const [vista, setVista] = useState<Vista>({ tipo: 'lotes' });
-  const voltar = () => abrir({ tipo: 'lotes' });
+  const [sexo, setSexo] = useState<'' | 'M' | 'F'>('');
+  const [tipoSaida, setTipoSaida] = useState<'' | keyof typeof SAIDA>('');
+  // O que a tela mostra: /rebanho?lote=ID (os pastos do Início também abrem assim), ?saidas, ?pesagens ou,
+  // sem nada, os cartões dos lotes.
+  const { ver, id, abrir } = useVista(['lote', 'saidas', 'pesagens'], () => {
+    setBusca('');
+    setSexo('');
+    setTipoSaida('');
+  });
+  const voltar = () => abrir();
 
   const opcoesLote = lotes.map((l) => ({ valor: String(l.id), rotulo: l.nome }));
   const ativos = animais.filter((a) => !a.saida_data);
@@ -77,10 +91,8 @@ export default function Rebanho() {
   const geral = resumoGrupo(ativos);
 
   const termo = busca.trim();
-  const [sexo, setSexo] = useState<'' | 'M' | 'F'>('');
-  const [tipoSaida, setTipoSaida] = useState<'' | keyof typeof SAIDA>('');
-  const loteAberto = vista.tipo === 'lote' ? lotes.find((l) => l.id === vista.id) : undefined;
-  const noInicio = !loteAberto && vista.tipo !== 'saidas' && vista.tipo !== 'pesagens';
+  const loteAberto = ver === 'lote' ? lotes.find((l) => String(l.id) === id) : undefined;
+  const noInicio = !loteAberto && ver !== 'saidas' && ver !== 'pesagens';
   const temBrinco = (a: Animal) => a.brinco.includes(termo);
   // Na tela dos lotes a busca vale para o rebanho todo; dentro de uma lista, filtra só aquela lista.
   const doLote = loteAberto ? ativos.filter((a) => a.lote_id === loteAberto.id) : [];
@@ -90,18 +102,12 @@ export default function Rebanho() {
       : []
     : loteAberto
       ? doLote.filter((a) => temBrinco(a) && (sexo === '' || a.sexo === sexo))
-      : vista.tipo === 'saidas'
+      : ver === 'saidas'
         ? saidos.filter((a) => temBrinco(a) && (tipoSaida === '' || a.saida_tipo === tipoSaida))
         : [];
   const listaPesagens = pesagens.filter((p) => brincoDe(p.animal_id).includes(termo));
-  const pagLista = usePaginacao(lista, [termo, vista, sexo, tipoSaida]);
+  const pagLista = usePaginacao(lista, [termo, ver, id, sexo, tipoSaida]);
   const pagPesagens = usePaginacao(listaPesagens, termo);
-  const abrir = (v: Vista) => {
-    setVista(v);
-    setBusca('');
-    setSexo('');
-    setTipoSaida('');
-  };
 
   /** Brinco já usado por outro animal ativo (o banco tem a mesma regra). */
   const brincoEmUso = (brinco: string, ignorarId?: number) =>
@@ -129,8 +135,6 @@ export default function Rebanho() {
     );
   };
 
-  const botaoVoltar = <Voltar para="Todos os lotes" onVoltar={voltar} />;
-
   return (
     <Tela>
       {/* ---------- Topo fixo: busca por brinco e cadastro ---------- */}
@@ -148,8 +152,8 @@ export default function Rebanho() {
       ) : loteAberto ? (
         /* ---------- Dentro de um lote ---------- */
         <>
-          <Voltar
-            para="Todos os lotes"
+          <Trilha
+            raiz="Rebanho"
             onVoltar={voltar}
             titulo={loteAberto.nome}
             descricao={loteAberto.descricao}
@@ -190,10 +194,10 @@ export default function Rebanho() {
             {pagLista.itens.map((a) => linhaAnimal(a, false))}
           </Secao>
         </>
-      ) : vista.tipo === 'saidas' ? (
+      ) : ver === 'saidas' ? (
         /* ---------- Vendidos, abatidos e mortos ---------- */
         <>
-          {botaoVoltar}
+          <Trilha raiz="Rebanho" onVoltar={voltar} aqui="Animais que saíram" />
           <Secao
             titulo={`Animais que saíram (${lista.length})`}
             descricao="Vendidos, abatidos e mortos. Toque para desfazer uma saída lançada por engano."
@@ -217,10 +221,10 @@ export default function Rebanho() {
             {pagLista.itens.map((a) => linhaAnimal(a, true))}
           </Secao>
         </>
-      ) : vista.tipo === 'pesagens' ? (
+      ) : ver === 'pesagens' ? (
         /* ---------- Histórico de pesagens ---------- */
         <>
-          {botaoVoltar}
+          <Trilha raiz="Rebanho" onVoltar={voltar} aqui="Pesagens" />
           <Secao titulo={`Pesagens (${listaPesagens.length})`} descricao="Para pesar, toque no animal. Aqui você corrige ou apaga uma pesagem. Use a busca no topo para ver as de um brinco." rodape={pagPesagens.controles}>
             {listaPesagens.length === 0 && (
               <Vazio>{pesagens.length === 0 ? 'Nenhuma pesagem ainda. Toque em um animal e escolha “Registrar pesagem”.' : 'Nenhuma pesagem desse brinco.'}</Vazio>
@@ -254,7 +258,7 @@ export default function Rebanho() {
                   valor={numero(r.cabecas)}
                   unidade={r.cabecas === 1 ? 'cabeça' : 'cabeças'}
                   detalhes={[r.peso === null ? 'Sem animais' : textoPeso(r.peso), r.gmd !== null && `+${kgDia(r.gmd)}`]}
-                  onClick={() => abrir({ tipo: 'lote', id: l.id })}
+                  onClick={() => abrir('lote', l.id)}
                 />
               );
             })}
@@ -265,14 +269,14 @@ export default function Rebanho() {
               titulo="Animais que saíram"
               subtitulo="Vendidos, abatidos e mortos"
               valor={numero(saidos.length)}
-              onClick={() => abrir({ tipo: 'saidas' })}
+              onClick={() => abrir('saidas')}
               dicaAcao="Ver os animais que saíram do rebanho"
             />
             <Linha
               titulo="Pesagens"
               subtitulo="Corrigir ou apagar uma pesagem"
               valor={numero(pesagens.length)}
-              onClick={() => abrir({ tipo: 'pesagens' })}
+              onClick={() => abrir('pesagens')}
               dicaAcao="Ver todas as pesagens"
             />
           </Secao>
@@ -292,11 +296,13 @@ export default function Rebanho() {
           acoes={
             aberto.animal.saida_data
               ? [
+                  verCertidao(aberto.animal),
                   { titulo: 'Desfazer a saída', descricao: 'Foi registrada por engano: o animal volta para o rebanho.', onClick: () => setAberto({ tela: 'desfazer', animal: aberto.animal }) },
                   { titulo: 'Corrigir o cadastro', descricao: 'Mudar brinco, raça, sexo, data ou peso de entrada.', onClick: () => setAberto({ tela: 'corrigir', animal: aberto.animal }) },
                   { titulo: 'Excluir animal', descricao: 'Apaga o animal e todo o histórico dele.', perigo: true, onClick: () => setAberto({ tela: 'excluir', animal: aberto.animal }) },
                 ]
               : [
+                  verCertidao(aberto.animal),
                   { titulo: 'Registrar pesagem', descricao: 'Anotar quanto o animal pesa hoje.', onClick: () => setAberto({ tela: 'pesar', animal: aberto.animal }) },
                   { titulo: 'Mudar de lote', descricao: 'Levar o animal para outro pasto ou para o confinamento.', onClick: () => setAberto({ tela: 'mover', animal: aberto.animal }) },
                   { titulo: 'Registrar venda, abate ou morte', descricao: 'O animal sai do rebanho, mas o histórico fica guardado.', onClick: () => setAberto({ tela: 'saida', animal: aberto.animal }) },
