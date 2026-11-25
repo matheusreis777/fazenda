@@ -18,6 +18,16 @@
   --primaria-suave: #f0f0f0;
   --alerta: #c62828;
   --alerta-suave: #fdecec;
+  /* Gráficos: paleta categórica validada (dataviz) na ordem fixa, e as linhas de apoio. */
+  --serie-1: #2a78d6; /* azul */
+  --serie-2: #eb6834; /* laranja */
+  --serie-3: #1baf7a; /* verde-água */
+  --serie-4: #eda100; /* amarelo */
+  --serie-5: #e87ba4; /* magenta */
+  --serie-6: #008300; /* verde */
+  --grade: #ededed;
+  --eixo: #d4d4d4;
+  --sobe-bom: #006300;
 }
 
 .dark {
@@ -33,6 +43,15 @@
   --primaria-suave: #1f1f1f;
   --alerta: #ff8a80;
   --alerta-suave: #3a1a1a;
+  --serie-1: #3987e5;
+  --serie-2: #d95926;
+  --serie-3: #199e70;
+  --serie-4: #c98500;
+  --serie-5: #d55181;
+  --serie-6: #0ca30c;
+  --grade: #222222;
+  --eixo: #383838;
+  --sobe-bom: #0ca30c;
 }
 
 /* Expõe a paleta como cores do Tailwind: bg-fundo, text-texto-2, border-borda… */
@@ -48,6 +67,15 @@
   --color-primaria-suave: var(--primaria-suave);
   --color-alerta: var(--alerta);
   --color-alerta-suave: var(--alerta-suave);
+  --color-serie-1: var(--serie-1);
+  --color-serie-2: var(--serie-2);
+  --color-serie-3: var(--serie-3);
+  --color-serie-4: var(--serie-4);
+  --color-serie-5: var(--serie-5);
+  --color-serie-6: var(--serie-6);
+  --color-grade: var(--grade);
+  --color-eixo: var(--eixo);
+  --color-sobe-bom: var(--sobe-bom);
 }
 
 /* Formulários entram deslizando pela direita (classe animate-gaveta). */
