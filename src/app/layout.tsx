@@ -10,8 +10,8 @@ export const metadata: Metadata = {
   title: 'Fazenda',
   description: 'Gestão de fazenda de gado: rebanho, alimentação e financeiro.',
   // PWA: o manifesto vem de src/app/manifest.ts; estes são os complementos para iPhone/iPad.
+  // Os ícones vêm dos arquivos src/app/icon.svg (aba do navegador) e src/app/apple-icon.png (iPhone/iPad).
   appleWebApp: { capable: true, title: 'Fazenda', statusBarStyle: 'default' },
-  icons: { icon: '/icon-192.png', apple: '/icon-192.png' },
 };
 
 export const viewport: Viewport = {
