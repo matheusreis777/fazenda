@@ -27,3 +27,9 @@ export async function trocarSenha(atual: string, nova: string): Promise<string |
   if (error) return ERROS[error.code ?? ''] ?? `Não foi possível trocar a senha: ${error.message}`;
   return null;
 }
+
+/** Nome de exibição, guardado na própria conta (user_metadata do Supabase), sem tabela nova. Só para mostrar, nunca para permissão. */
+export async function salvarNome(nome: string): Promise<string | null> {
+  const { error } = await supabase.auth.updateUser({ data: { nome } });
+  return error ? `Não foi possível salvar o nome: ${error.message}` : null;
+}

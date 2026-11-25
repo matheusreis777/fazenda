@@ -4,13 +4,11 @@ import type { Session } from '@supabase/supabase-js';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
+import { type ReactNode, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 
-import { Formulario } from '@/components/formulario';
 import { Login } from '@/components/login';
-import { Botao, Icone, type NomeIcone } from '@/components/ui';
+import { Avisos, Botao, Girando, Icone, type NomeIcone } from '@/components/ui';
 import { carregar, ligarBanco } from '@/lib/banco';
-import { SENHA_MINIMA, trocarSenha } from '@/lib/conta';
 import { BASE_VAZIA, definir, useDados } from '@/lib/dados';
 import { supabase, supabaseConfigurado } from '@/lib/supabase';
 import { alternarTema, useEscuro } from '@/lib/tema';
@@ -28,6 +26,7 @@ const ABAS: { href: string; titulo: string; icone: NomeIcone; soDesenvolvedor?: 
   { href: '/relatorios', titulo: 'Relatórios', icone: 'relatorios' },
   // Esconder a aba é só conveniência: a permissão de verdade é conferida no servidor (supabase/functions/admin).
   { href: '/desenvolvedor', titulo: 'Desenvolvedor', icone: 'dev', soDesenvolvedor: true },
+  { href: '/perfil', titulo: 'Perfil e configurações', icone: 'perfil' },
 ];
 
 const semAssinatura = () => () => {};
@@ -38,16 +37,16 @@ function Centro({ children }: { children: ReactNode }) {
 
 /** Moldura do app: decide entre login, avisos e as telas, e desenha o menu (lateral no computador, embaixo no celular). */
 export function AppShell({ children }: { children: ReactNode }) {
-  const caminho = usePathname();
+  // Sub-páginas contam como a seção delas (/rebanho/certidao acende a aba Rebanho e põe "Rebanho" no topo).
+  const caminho = `/${usePathname().split('/')[1]}`;
   const escuro = useEscuro();
-  const { carregado, erro, pendente, admin } = useDados();
+  const { carregado, erro, pendente, admin, nomeFazenda } = useDados();
   // O app depende do navegador (sessão, tema, data de hoje): só desenha depois de montar, para o HTML
   // do servidor e o do navegador não divergirem.
   const montado = useSyncExternalStore(semAssinatura, () => true, () => false);
 
-  const [trocandoSenha, setTrocandoSenha] = useState(false);
   const [maisAberto, setMaisAberto] = useState(false);
-  const [avisoSenha, setAvisoSenha] = useState(false);
+  const [saindo, setSaindo] = useState(false);
 
   // undefined = ainda lendo a sessão salva; null = sem login.
   const [sessao, setSessao] = useState<Session | null | undefined>(supabaseConfigurado ? undefined : null);
@@ -68,7 +67,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (!montado) return null;
 
-  const sair = () => void supabase.auth.signOut();
+  // Devolve a promessa: o Botao mostra a rodinha até terminar.
+  const sair = () => {
+    setSaindo(true);
+    return supabase.auth.signOut().finally(() => setSaindo(false));
+  };
 
   if (supabaseConfigurado) {
     if (sessao === undefined) return null;
@@ -76,8 +79,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!carregado) {
       return (
         <Centro>
-          <p role="status" className="font-medium text-texto-2">
-            Carregando…
+          <p role="status" className="flex items-center gap-3 font-medium text-texto-2">
+            <Girando className="size-6" />
+            Carregando os dados da fazenda…
           </p>
         </Centro>
       );
@@ -90,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             Sua conta ({sessao.user.email}) foi criada, mas ainda não tem acesso aos dados da fazenda. Peça ao responsável
             para aprovar e depois clique em “Verificar de novo”.
           </p>
-          <Botao titulo="Verificar de novo" onClick={() => void carregar()} />
+          <Botao titulo="Verificar de novo" onClick={carregar} />
           <Botao titulo="Sair" secundario onClick={sair} />
         </Centro>
       );
@@ -99,7 +103,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       return (
         <Centro>
           <p className="max-w-md font-medium">{erro}</p>
-          <Botao titulo="Tentar de novo" onClick={() => void carregar()} />
+          <Botao titulo="Tentar de novo" onClick={carregar} />
           <Botao titulo="Sair" secundario onClick={sair} />
         </Centro>
       );
@@ -117,7 +121,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex h-dvh flex-col md:flex-row print:block print:h-auto">
       {/* Computador e tablet deitado: menu na lateral */}
       <nav aria-label="Menu" className="hidden w-56 shrink-0 flex-col gap-1 border-r border-borda bg-cartao p-3 md:flex print:hidden">
-        <span className="px-3 py-2 text-lg font-bold">Fazenda</span>
+        {/* Nome dado em Perfil e configurações; nome comprido quebra em duas linhas em vez de cortar. */}
+        <span className="px-3 py-2 text-lg leading-snug font-bold break-words">{nomeFazenda || 'Fazenda'}</span>
         {abas.map((a) => (
           <Link
             key={a.href}
@@ -145,23 +150,24 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icone nome={escuro ? 'sol' : 'lua'} className="size-[22px]" />
             </button>
             {supabaseConfigurado && (
-              <>
-                {/* No celular, "Trocar senha" fica no menu "Mais" para o cabeçalho caber. */}
-                <button
-                  type="button"
-                  onClick={() => setTrocandoSenha(true)}
-                  className="hidden cursor-pointer text-sm font-bold text-texto-2 hover:opacity-80 md:inline">
-                  Trocar senha
-                </button>
-                <button type="button" onClick={sair} className="cursor-pointer text-sm font-bold text-texto-2 hover:opacity-80">
-                  Sair
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => void sair()}
+                disabled={saindo}
+                aria-busy={saindo || undefined}
+                className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-texto-2 hover:opacity-80 disabled:cursor-wait">
+                {saindo && <Girando />}
+                {saindo ? 'Saindo…' : 'Sair'}
+              </button>
             )}
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto print:overflow-visible">{children}</main>
+        {/* As telas leem a sub-tela do endereço (useVista → useSearchParams), que exige um Suspense em volta para o
+            build passar. O app só desenha no navegador, então não precisa de "carregando". */}
+        <main className="min-h-0 flex-1 overflow-y-auto print:overflow-visible">
+          <Suspense>{children}</Suspense>
+        </main>
 
         {/* Celular: abas embaixo */}
         <nav aria-label="Menu" className="flex shrink-0 border-t border-borda bg-cartao pb-[env(safe-area-inset-bottom)] md:hidden print:hidden">
@@ -210,50 +216,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {a.titulo}
               </Link>
             ))}
-            {supabaseConfigurado && (
-              <button
-                type="button"
-                onClick={() => (setMaisAberto(false), setTrocandoSenha(true))}
-                className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left font-semibold">
-                <span className="size-5" aria-hidden="true" />
-                Trocar senha
-              </button>
-            )}
           </nav>
         </div>
       )}
 
-      {trocandoSenha && sessao && (
-        <Formulario
-          titulo="Trocar senha"
-          campos={[
-            { chave: 'atual', rotulo: 'Senha atual', tipo: 'senha', autoComplete: 'current-password' },
-            { chave: 'nova', rotulo: 'Nova senha', tipo: 'senha', dica: `Mínimo ${SENHA_MINIMA} caracteres` },
-            { chave: 'repetir', rotulo: 'Repita a nova senha', tipo: 'senha' },
-          ]}
-          validar={(v) => {
-            if (v.nova.length < SENHA_MINIMA) return `A nova senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.`;
-            if (v.nova !== v.repetir) return 'As duas senhas novas não são iguais.';
-            return null;
-          }}
-          onSalvar={async (v) => {
-            const erro = await trocarSenha(v.atual, v.nova);
-            if (!erro) setAvisoSenha(true);
-            return erro;
-          }}
-          onFechar={() => setTrocandoSenha(false)}
-        />
-      )}
-      {avisoSenha && (
-        <div role="status" className="fixed inset-x-0 bottom-20 z-50 flex justify-center px-4 md:bottom-6">
-          <button
-            type="button"
-            onClick={() => setAvisoSenha(false)}
-            className="cursor-pointer rounded-full bg-primaria px-5 py-3 text-sm font-bold text-sobre-primaria shadow-lg">
-            Senha trocada. ✕
-          </button>
-        </div>
-      )}
+      <Avisos />
     </div>
   );
 }

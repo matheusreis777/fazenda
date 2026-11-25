@@ -17,7 +17,7 @@ function Ranking({ itens, formatar }: { itens: [string, number][]; formatar: (v:
 }
 
 export default function Relatorios() {
-  const { animais, despesas, tratos, pesagens, sanidade, funcionarios, maquinas, lotes } = useDados();
+  const { animais, despesas, tratos, pesagens, sanidade, funcionarios, maquinas, lotes, nomeFazenda } = useDados();
   const [periodo, setPeriodo] = useState<Periodo>('mes');
   // 0 = atual; -1 = anterior…
   const [deslocamento, setDeslocamento] = useState(0);
@@ -72,7 +72,9 @@ export default function Relatorios() {
         </div>
         <Botao titulo="Imprimir / PDF" secundario onClick={() => window.print()} />
       </div>
-      <h2 className="hidden text-2xl font-bold print:block">Relatório da fazenda · {titulo}</h2>
+      <h2 className="hidden text-2xl font-bold print:block">
+        {nomeFazenda ? `${nomeFazenda} · Relatório` : 'Relatório da fazenda'} · {titulo}
+      </h2>
 
       <Grade>
         <Cartao icone="vendas" rotulo="Receita de vendas" valor={reais(receita)} detalhe={`${vendas.length} animais`} />

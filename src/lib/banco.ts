@@ -15,6 +15,7 @@ const TABELA: Record<keyof Base, string> = {
   sanidade: 'sanidade',
   funcionarios: 'funcionarios',
   maquinas: 'maquinas',
+  fazenda: 'fazenda',
 };
 
 function mensagem(erro: PostgrestError): string {

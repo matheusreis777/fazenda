@@ -21,3 +21,18 @@ export function hojeIso(de = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${de.getFullYear()}-${p(de.getMonth() + 1)}-${p(de.getDate())}`;
 }
+
+/**
+ * Quilos de peso vivo em 1 arroba (@). Costume na pesagem do boi vivo: 30 kg na balança = 1 @
+ * (equivale a 15 kg de carcaça com 50% de rendimento). Se a fazenda usar outro valor, é só mudar aqui.
+ */
+export const KG_POR_ARROBA = 30;
+
+export const kgParaArroba = (kg: number) => kg / KG_POR_ARROBA;
+export const arrobaParaKg = (arrobas: number) => arrobas * KG_POR_ARROBA;
+
+/** 540 → '540 kg · 18 @'; 352,5 → '352,5 kg · 11,8 @' */
+export function textoPeso(kg: number): string {
+  const f = (v: number, casas: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: casas });
+  return `${f(kg, 1)} kg · ${f(kgParaArroba(kg), 1)} @`;
+}

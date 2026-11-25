@@ -19,3 +19,11 @@ assert.equal(hojeIso(new Date(2026, 10, 30, 23, 30)), '2026-11-30');
 assert.equal(hojeIso(new Date(2026, 0, 5)), '2026-01-05');
 
 console.log('OK: formato');
+
+const { arrobaParaKg, kgParaArroba, textoPeso } = await import('./formato.ts');
+assert.equal(kgParaArroba(540), 18);
+assert.equal(arrobaParaKg(18), 540);
+assert.equal(arrobaParaKg(12.5), 375);
+assert.equal(textoPeso(540), '540 kg · 18 @');
+assert.equal(textoPeso(352.5), '352,5 kg · 11,8 @');
+console.log('OK: arroba');

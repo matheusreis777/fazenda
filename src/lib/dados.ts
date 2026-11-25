@@ -92,6 +92,8 @@ export type Funcionario = {
   ativo: boolean;
 };
 export type Maquina = { id: number; nome: string; tipo: string | null; identificacao: string | null; ano: number | null; ativo: boolean };
+/** Dados da própria fazenda: no banco é uma linha só, sempre com id 1 (ver supabase/migrations/0005_fazenda.sql). */
+export type Fazenda = { id: 1; nome: string };
 
 export type Base = {
   lotes: Lote[];
@@ -104,6 +106,7 @@ export type Base = {
   sanidade: Sanidade[];
   funcionarios: Funcionario[];
   maquinas: Maquina[];
+  fazenda: Fazenda[];
 };
 
 const semSaida = { saida_data: null, saida_tipo: null, saida_valor: null } as const;
@@ -184,6 +187,7 @@ const EXEMPLO: Base = {
     { id: 1, nome: 'Trator', tipo: 'Trator', identificacao: 'Massey Ferguson 4275', ano: 2015, ativo: true },
     { id: 2, nome: 'Carreta', tipo: 'Implemento', identificacao: null, ano: 2018, ativo: true },
   ],
+  fazenda: [{ id: 1, nome: 'Fazenda Boa Esperança' }],
 };
 
 const maisRecentePrimeiro = (a: { data: string; id: number }, b: { data: string; id: number }) =>
@@ -200,6 +204,7 @@ export const BASE_VAZIA: Base = {
   sanidade: [],
   funcionarios: [],
   maquinas: [],
+  fazenda: [],
 };
 
 let base: Base = EXEMPLO;
@@ -241,6 +246,8 @@ function derivar(b: Base) {
     sanidade: [...b.sanidade].sort(maisRecentePrimeiro),
     funcionarios: [...b.funcionarios].sort((x, y) => Number(y.ativo) - Number(x.ativo) || x.nome.localeCompare(y.nome, 'pt-BR')),
     maquinas: [...b.maquinas].sort((x, y) => Number(y.ativo) - Number(x.ativo) || x.nome.localeCompare(y.nome, 'pt-BR')),
+    /** '' enquanto ninguém deu nome; as telas mostram "Fazenda" no lugar. */
+    nomeFazenda: b.fazenda[0]?.nome.trim() ?? '',
   };
 }
 
@@ -363,6 +370,8 @@ export function proximosManejos(registros: Sanidade[], ate: string): Sanidade[] 
 export const nomeLote = (lotes: Lote[], id: number) => lotes.find((l) => l.id === id)?.nome ?? '—';
 export const reais = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 export const numero = (v: number) => v.toLocaleString('pt-BR');
+/** 12345 → '12,3 mil'; 1200000 → '1,2 mi'. Para números grandes caberem nos cartões. */
+export const numeroCurto = (v: number) => v.toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
 /** '2026-11-23' → '23/11' */
 export const diaMes = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
@@ -375,4 +384,20 @@ export function mesIso(deslocar = 0, de = new Date()): string {
 export function nomeMes(mes: string): string {
   const nome = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   return nome.charAt(0).toUpperCase() + nome.slice(1);
+}
+
+/**
+ * Cria um lote só com o nome, de dentro de outro formulário (ex.: cadastro de animal).
+ * Devolve o id do lote novo como texto (o valor da opção) ou a mensagem de erro.
+ */
+export async function criarLote(nome: string): Promise<{ valor: string } | { erro: string }> {
+  const limpo = nome.trim();
+  if (!limpo) return { erro: 'Digite o nome do lote.' };
+  const existente = dados.lotes.find((l) => l.nome.toLowerCase() === limpo.toLowerCase());
+  if (existente) return { valor: String(existente.id) };
+  const erro = await salvar('lotes', { nome: limpo, descricao: null });
+  if (erro) return { erro };
+  // O nome é único: acha o lote recém-criado por ele (vale no modo exemplo e no banco).
+  const novo = dados.lotes.find((l) => l.nome.toLowerCase() === limpo.toLowerCase());
+  return novo ? { valor: String(novo.id) } : { erro: 'O lote foi criado, mas não apareceu na lista. Feche e abra de novo.' };
 }

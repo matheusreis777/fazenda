@@ -1,6 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
+import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 
 import { Botao, CAMPO } from '@/components/ui';
@@ -19,8 +20,12 @@ const ERROS_DE_CADASTRO: Record<string, string> = {
   over_email_send_rate_limit: 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente de novo.',
 };
 
-/** Entrar ou criar conta. Depois de entrar, o AppShell troca esta tela pelo app sozinho. */
+/**
+ * Entrar ou criar conta. Depois de entrar, o AppShell troca esta tela pelo app sozinho.
+ * Esta tela aparece em qualquer endereço; ao entrar, vai sempre para o Início (o painel).
+ */
 export function Login() {
+  const router = useRouter();
   const [criando, setCriando] = useState(false);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -38,7 +43,7 @@ export function Login() {
 
   async function entrar() {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha });
-    if (!error) return;
+    if (!error) return router.replace('/');
     setErro(
       error.code === 'email_not_confirmed'
         ? 'Confirme seu e-mail pelo link que enviamos antes de entrar.'
@@ -52,7 +57,8 @@ export function Login() {
     const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: senha });
     if (error) return setErro(ERROS_DE_CADASTRO[error.code ?? ''] ?? `Não foi possível criar a conta: ${error.message}`);
     // Com confirmação de e-mail ligada no Supabase, a conta nasce sem sessão até a pessoa clicar no link.
-    if (!data.session) {
+    if (data.session) router.replace('/');
+    else {
       setCriando(false);
       setSenha('');
       setConfirmacao('');
@@ -127,7 +133,8 @@ export function Login() {
         <Botao
           tipo="submit"
           desabilitado={!pronto}
-          titulo={ocupado ? 'Aguarde…' : criando ? 'Criar conta' : 'Entrar'}
+          carregando={ocupado}
+          titulo={ocupado ? (criando ? 'Criando conta…' : 'Entrando…') : criando ? 'Criar conta' : 'Entrar'}
           className="rounded-xl py-3 text-base"
         />
 
