@@ -2,6 +2,11 @@
 -- Rodar uma vez, com as tabelas vazias. Para apagar depois, ver supabase/seed/limpar.sql.
 -- Os números são aleatórios mas sempre os mesmos (setseed), e respeitam as regras do banco:
 -- estoque nunca negativo, saída depois da entrada, brinco único entre ativos.
+-- Os dados vão para a empresa de uma conta aprovada (troque o e-mail). Roda como essa conta,
+-- então o banco preenche o empresa_id e cada consulta abaixo só enxerga a empresa dela.
+begin;
+select set_config('request.jwt.claims', json_build_object('sub', (select id from auth.users where email = 'troque@exemplo.com'), 'role', 'authenticated')::text, true);
+set local role authenticated;
 do $$
 declare
   hoje constant date := date '2026-11-25';
@@ -256,3 +261,4 @@ begin
   select date '2026-11-21', 'tratamento', 'Spray cicatrizante (bicheira)', id, date '2026-11-28', 'Repetir se não cicatrizar'
   from animais where saida_data is null and lote_id = l_acude order by id desc limit 1;
 end $$;
+commit;

@@ -29,6 +29,11 @@ export type Animal = {
   saida_tipo: 'venda' | 'morte' | 'abate' | null;
   saida_peso?: number | null;
   saida_valor: number | null;
+  /** Data de nascimento (aproximada nos comprados). Nos nascidos na fazenda é a data de entrada. */
+  nascimento?: string | null;
+  /** Número da GTA (Guia de Trânsito Animal) que veio com o animal na compra e que acompanhou a saída. */
+  entrada_gta?: string | null;
+  saida_gta?: string | null;
 };
 /** `saldo_inicial` é o que já havia ao cadastrar; `minimo` serve para destacar estoque baixo. */
 type InsumoBase = { id: number; nome: string; unidade: string; minimo: number; saldo_inicial: number };
@@ -92,7 +97,7 @@ export type Funcionario = {
   ativo: boolean;
 };
 export type Maquina = { id: number; nome: string; tipo: string | null; identificacao: string | null; ano: number | null; ativo: boolean };
-/** Dados da própria fazenda: no banco é uma linha só, sempre com id 1 (ver supabase/migrations/0005_fazenda.sql). */
+/** Dados da própria fazenda: uma linha por empresa (conta), sempre com id 1; o banco só entrega a da conta logada (ver 0007_empresas.sql). */
 export type Fazenda = { id: 1; nome: string };
 
 export type Base = {
@@ -270,6 +275,7 @@ type Alteracao<K extends keyof Base> = Omit<Item<K>, 'id'> | (Partial<Item<K>> &
 export type Remoto = {
   salvar: (colecao: keyof Base, item: { id?: number } & Record<string, unknown>) => Promise<string | null>;
   excluir: (colecao: keyof Base, id: number) => Promise<string | null>;
+  salvarVarios: (colecao: keyof Base, itens: ({ id?: number } & Record<string, unknown>)[]) => Promise<string | null>;
 };
 let remoto: Remoto | null = null;
 export const modoExemplo = () => remoto === null;
@@ -293,13 +299,24 @@ export function useDados() {
  */
 export async function salvar<K extends keyof Base>(colecao: K, item: Alteracao<K>): Promise<string | null> {
   if (remoto) return remoto.salvar(colecao, item as { id?: number } & Record<string, unknown>);
-  const lista = base[colecao] as { id: number }[];
-  const nova =
-    'id' in item && item.id != null
-      ? lista.map((x) => (x.id === item.id ? { ...x, ...item } : x))
-      : [{ ...item, id: proximoId++ }, ...lista];
-  definir({ ...base, [colecao]: nova });
+  definir({ ...base, [colecao]: aplicar(base[colecao] as { id: number }[], [item]) });
   return null;
+}
+
+/** O mesmo que `salvar`, para uma lista (cadastro e ações em lote): uma gravação e uma releitura só. */
+export async function salvarVarios<K extends keyof Base>(colecao: K, itens: Alteracao<K>[]): Promise<string | null> {
+  if (remoto) return remoto.salvarVarios(colecao, itens as ({ id?: number } & Record<string, unknown>)[]);
+  definir({ ...base, [colecao]: aplicar(base[colecao] as { id: number }[], itens) });
+  return null;
+}
+
+/** Modo exemplo: sem `id` entra no começo da lista; com `id` altera só os campos informados. */
+function aplicar(lista: { id: number }[], itens: object[]) {
+  for (const item of itens) {
+    const id = (item as { id?: number }).id;
+    lista = id != null ? lista.map((x) => (x.id === id ? { ...x, ...item } : x)) : [{ ...item, id: proximoId++ }, ...lista];
+  }
+  return lista;
 }
 
 export async function excluir(colecao: keyof Base, id: number): Promise<string | null> {
@@ -339,6 +356,31 @@ export function somarDias(iso: string, n: number): string {
 }
 
 /**
+ * Brincos em sequência a partir do primeiro, mantendo os zeros à esquerda: ('0198', 3) → 0198, 0199, 0200.
+ * null se o primeiro não for só números (aí não dá para numerar).
+ */
+export function faixaBrincos(primeiro: string, n: number): string[] | null {
+  const t = primeiro.trim();
+  if (!/^\d+$/.test(t) || !Number.isInteger(n) || n < 1) return null;
+  // BigInt: brinco SISBOV tem 15 dígitos, perto do limite de precisão do Number.
+  return Array.from({ length: n }, (_, i) => String(BigInt(t) + BigInt(i)).padStart(t.length, '0'));
+}
+
+/**
+ * Divide `total` em centavos, proporcional a `pesos` (ex.: valor de uma venda pelo peso de cada animal).
+ * A sobra do arredondamento vai para o último, para a soma bater exatamente com o total.
+ */
+export function ratear(total: number, pesos: number[]): number[] {
+  if (pesos.length === 0) return [];
+  const soma = pesos.reduce((s, p) => s + p, 0);
+  const fatias = soma > 0 ? pesos : pesos.map(() => 1);
+  const centavos = Math.round(total * 100);
+  const partes = fatias.map((p) => Math.floor((centavos * p) / (soma > 0 ? soma : fatias.length)));
+  partes[partes.length - 1] += centavos - partes.reduce((s, c) => s + c, 0);
+  return partes.map((c) => c / 100);
+}
+
+/**
  * Peso atual e ganho médio diário (GMD) de um animal, considerando a entrada como a primeira pesagem.
  * `gmd` é null enquanto não houver pesagem depois da entrada.
  */
@@ -348,6 +390,65 @@ export function evolucaoPeso(animal: Animal, pesagens: Pesagem[]): { peso: numbe
   if (!ultima) return { peso: animal.entrada_peso, data: animal.entrada_data, gmd: null };
   const periodo = dias(animal.entrada_data, ultima.data);
   return { peso: ultima.peso, data: ultima.data, gmd: periodo > 0 ? (ultima.peso - animal.entrada_peso) / periodo : null };
+}
+
+/** Nascimento conhecido: o informado ou, nos nascidos na fazenda (cadastros antigos não têm o campo), a entrada. */
+export const nascimentoDe = (a: Animal) => a.nascimento ?? (a.entrada_tipo === 'nascimento' ? a.entrada_data : null);
+
+/** Meses completos de `nascimento` até `hoje` (ambos 'AAAA-MM-DD'). */
+export function idadeMeses(nascimento: string, hoje: string): number {
+  const [a1, m1, d1] = nascimento.split('-').map(Number);
+  const [a2, m2, d2] = hoje.split('-').map(Number);
+  return (a2 - a1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
+}
+
+/**
+ * Faixas de idade da GTA de bovinos, em meses (até e incluindo `ate`).
+ * Conferir no formulário do e-SANIAGRO (Iagro/MS); se as faixas forem outras, é só mudar aqui.
+ */
+export const FAIXAS_GTA = [
+  { ate: 12, rotulo: '0 a 12 meses' },
+  { ate: 24, rotulo: '13 a 24 meses' },
+  { ate: 36, rotulo: '25 a 36 meses' },
+  { ate: Infinity, rotulo: 'Mais de 36 meses' },
+] as const;
+
+/** Machos e fêmeas por faixa de idade da GTA; `semIdade` = animais sem nascimento conhecido. */
+export function resumoGta(animais: Animal[], hoje: string) {
+  const conta = () => ({ machos: 0, femeas: 0 });
+  const faixas = FAIXAS_GTA.map((f) => ({ rotulo: f.rotulo, ...conta() }));
+  const semIdade = conta();
+  for (const a of animais) {
+    const nasc = nascimentoDe(a);
+    const alvo = nasc ? faixas[FAIXAS_GTA.findIndex((f) => idadeMeses(nasc, hoje) <= f.ate)] : semIdade;
+    if (a.sexo === 'M') alvo.machos++;
+    else alvo.femeas++;
+  }
+  return { faixas, semIdade };
+}
+
+/** Vacina contra brucelose pelo nome do produto ("Brucelose", "B19" ou "RB51"). */
+export const VACINA_BRUCELOSE = /brucel|b19|rb51/i;
+
+/**
+ * Bezerras de 3 a 8 meses ainda sem vacina contra brucelose (obrigatória; sem a declaração no órgão
+ * estadual a GTA fica bloqueada). Conta a vacina aplicada no animal ou no lote dele depois do nascimento.
+ * ponytail: usa o lote atual, porque o app não guarda por quais lotes o animal passou.
+ */
+export function pendentesBrucelose(animais: Animal[], sanidade: Sanidade[], hoje: string) {
+  return animais
+    .filter((a) => a.sexo === 'F' && !a.saida_data)
+    .map((a) => ({ animal: a, nascimento: nascimentoDe(a) }))
+    .filter((x): x is { animal: Animal; nascimento: string } => {
+      if (!x.nascimento) return false;
+      const meses = idadeMeses(x.nascimento, hoje);
+      if (meses < 3 || meses > 8) return false;
+      return !sanidade.some(
+        (s) => s.tipo === 'vacina' && VACINA_BRUCELOSE.test(s.produto) && (s.animal_id === x.animal.id || (s.lote_id === x.animal.lote_id && s.data >= x.nascimento!)),
+      );
+    })
+    .map((x) => ({ ...x, meses: idadeMeses(x.nascimento, hoje) }))
+    .sort((a, b) => a.nascimento.localeCompare(b.nascimento));
 }
 
 /**

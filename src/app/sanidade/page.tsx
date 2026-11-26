@@ -2,14 +2,37 @@
 
 import { useState } from 'react';
 
-import { Formulario } from '@/components/formulario';
-import { CartaoGrupo, contem, Etiqueta, Grupos, Linha, Opcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
-import { criarLote, diaMes, dias, excluir, nomeLote, numero, proximosManejos, salvar, type Sanidade, somarDias, TIPOS_SANIDADE, type TipoSanidade, useDados } from '@/lib/dados';
+import { Formulario, marcados } from '@/components/formulario';
+import { Botao, CartaoGrupo, contem, Etiqueta, Grupos, Linha, Opcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
+import { dataCurta } from '@/lib/certidao';
+import {
+  criarLote,
+  diaMes,
+  dias,
+  excluir,
+  nomeLote,
+  numero,
+  pendentesBrucelose,
+  proximosManejos,
+  salvar,
+  salvarVarios,
+  type Sanidade,
+  somarDias,
+  TIPOS_SANIDADE,
+  type TipoSanidade,
+  useDados,
+  VACINA_BRUCELOSE,
+} from '@/lib/dados';
 import { hojeIso } from '@/lib/formato';
 
 const OPCOES_TIPO = (Object.keys(TIPOS_SANIDADE) as TipoSanidade[]).map((t) => ({ valor: t, rotulo: TIPOS_SANIDADE[t] }));
 /** Quantos dias à frente a lista "A fazer" olha. */
 const JANELA_DIAS = 30;
+/** Último dia em que a bezerra ainda tem 8 meses (a B19 só pode até essa idade). */
+const limiteBrucelose = (nascimento: string) => {
+  const [a, m, d] = nascimento.split('-').map(Number);
+  return hojeIso(new Date(a, m - 1 + 9, d - 1));
+};
 
 
 export default function SanidadePage() {
@@ -30,9 +53,12 @@ export default function SanidadePage() {
   };
 
   const emBreve = aFazer.filter((s) => s.proxima_data! >= hoje);
+  const pendentes = pendentesBrucelose(animais, sanidade, hoje);
+  // Bezerras marcadas de início no formulário da vacina de brucelose; null = fechado.
+  const [formBrucelose, setFormBrucelose] = useState<string[] | null>(null);
   const [busca, setBusca] = useState('');
-  // O que a tela mostra: ?atrasadas, ?breve, ?historico ou, sem nada, os cartões.
-  const { ver, abrir } = useVista(['atrasadas', 'breve', 'historico'], () => {
+  // O que a tela mostra: ?atrasadas, ?breve, ?historico, ?brucelose ou, sem nada, os cartões.
+  const { ver, abrir } = useVista(['atrasadas', 'breve', 'historico', 'brucelose'], () => {
     setBusca('');
     setTipo(null);
   });
@@ -45,6 +71,8 @@ export default function SanidadePage() {
   const lista =
     vista === 'atrasadas' ? atrasados.filter(temTermo) : vista === 'breve' ? emBreve.filter(temTermo) : sanidade.filter((s) => temTermo(s) && (tipo === null || s.tipo === tipo));
   const pag = usePaginacao(lista, [vista, termo, tipo]);
+  const listaBrucelose = pendentes.filter((p) => contem(p.animal.brinco, termo) || contem(nomeLote(lotes, p.animal.lote_id), termo));
+  const pagBrucelose = usePaginacao(listaBrucelose, [vista, termo]);
 
   /** "vence em 5 dias", "venceu há 3 dias", "vence hoje". */
   const prazo = (data: string) => {
@@ -79,7 +107,7 @@ export default function SanidadePage() {
   );
   // Os nomes dos cartões do início, para a trilha bater com o que foi tocado.
   const trilha = vista !== 'inicio' && (
-    <Trilha raiz="Sanidade" onVoltar={voltar} aqui={{ atrasadas: 'Atrasadas', breve: 'Para aplicar', historico: 'Já aplicadas' }[vista]} />
+    <Trilha raiz="Sanidade" onVoltar={voltar} aqui={{ atrasadas: 'Atrasadas', breve: 'Para aplicar', historico: 'Já aplicadas', brucelose: 'Brucelose' }[vista]} />
   );
 
   return (
@@ -88,6 +116,7 @@ export default function SanidadePage() {
       <Topo busca={busca} onBusca={setBusca} dica="Procurar produto, lote ou brinco" novo="+ Aplicação" rotuloNovo="Registrar aplicação" onNovo={() => setForm({})}>
         {numero(atrasados.length)} {atrasados.length === 1 ? 'atrasada' : 'atrasadas'} · {numero(emBreve.length)} para os próximos {JANELA_DIAS} dias ·{' '}
         {numero(doMes.length)} aplicadas neste mês
+        {pendentes.length > 0 && ` · ${numero(pendentes.length)} ${pendentes.length === 1 ? 'bezerra' : 'bezerras'} para brucelose`}
       </Topo>
 
       {vista === 'inicio' && termo ? (
@@ -108,6 +137,38 @@ export default function SanidadePage() {
               <Vazio>{termo ? 'Nenhuma dose com esse produto, lote ou brinco.' : vista === 'atrasadas' ? 'Nenhuma dose atrasada.' : `Nada para aplicar nos próximos ${JANELA_DIAS} dias.`}</Vazio>
             )}
             {pag.itens.map(linhaAFazer)}
+          </Secao>
+        </>
+      ) : vista === 'brucelose' ? (
+        /* ---------- Bezerras para vacinar contra brucelose ---------- */
+        <>
+          {trilha}
+          <Secao
+            titulo={`Bezerras sem vacina de brucelose (${listaBrucelose.length})`}
+            descricao="Fêmeas de 3 a 8 meses. Depois dos 8 meses a B19 não pode mais ser usada. Declare a vacinação no Iagro (e-SANIAGRO): sem a declaração, a GTA fica bloqueada."
+            acao={pendentes.length > 1 && <Botao titulo="Vacinar várias" onClick={() => setFormBrucelose(pendentes.map((p) => String(p.animal.id)))} />}
+            rodape={pagBrucelose.controles}>
+            {listaBrucelose.length === 0 && (
+              <Vazio>
+                {pendentes.length === 0
+                  ? 'Nenhuma bezerra esperando a vacina. Bezerras compradas sem data de nascimento não entram nesta conta.'
+                  : 'Nenhuma bezerra com esse brinco ou lote.'}
+              </Vazio>
+            )}
+            {pagBrucelose.itens.map((p) => {
+              const limite = limiteBrucelose(p.nascimento);
+              return (
+                <Linha
+                  key={p.animal.id}
+                  marca={p.animal.brinco}
+                  titulo={`${p.meses} ${p.meses === 1 ? 'mês' : 'meses'} · Lote ${nomeLote(lotes, p.animal.lote_id)}`}
+                  subtitulo={`Vacinar até ${dataCurta(limite)}`}
+                  etiqueta={dias(hoje, limite) <= 30 && <Etiqueta texto="Urgente" tom="alerta" />}
+                  onClick={() => setFormBrucelose([String(p.animal.id)])}
+                  dicaAcao="Registrar a vacina desta bezerra"
+                />
+              );
+            })}
           </Secao>
         </>
       ) : vista === 'historico' ? (
@@ -151,6 +212,14 @@ export default function SanidadePage() {
             unidade={sanidade.length === 1 ? 'aplicação' : 'aplicações'}
             detalhes={[`${numero(doMes.length)} neste mês`]}
             onClick={() => abrir('historico')}
+          />
+          <CartaoGrupo
+            titulo="Brucelose"
+            valor={numero(pendentes.length)}
+            unidade={pendentes.length === 1 ? 'bezerra' : 'bezerras'}
+            alerta={pendentes.length > 0}
+            detalhes={[pendentes.length > 0 ? 'de 3 a 8 meses sem vacina' : 'nenhuma esperando vacina']}
+            onClick={() => abrir('brucelose')}
           />
         </Grupos>
       )}
@@ -233,6 +302,38 @@ export default function SanidadePage() {
           sucesso={form.item ? 'Aplicação corrigida.' : 'Aplicação registrada.'}
           excluirTexto="Apagar aplicação"
           onFechar={() => setForm(null)}
+        />
+      )}
+
+      {formBrucelose && (
+        <Formulario
+          titulo="Vacina contra brucelose"
+          descricao="Registra uma aplicação para cada bezerra marcada. Depois, declare a vacinação no Iagro."
+          campos={[
+            { chave: 'animais', rotulo: 'Quais bezerras', tipo: 'varios', opcoes: pendentes.map((p) => ({ valor: String(p.animal.id), rotulo: p.animal.brinco })) },
+            { chave: 'produto', rotulo: 'Vacina', dica: 'Ex.: Brucelose (B19)' },
+            { chave: 'data', rotulo: 'Data da aplicação', tipo: 'data' },
+            { chave: 'observacao', rotulo: 'Observação', opcional: true, dica: 'Veterinário, partida da vacina…' },
+          ]}
+          iniciais={{ animais: formBrucelose.join(','), produto: 'Brucelose (B19)' }}
+          validar={(v) => (VACINA_BRUCELOSE.test(v.produto) ? null : 'Escreva “Brucelose”, “B19” ou “RB51” no nome da vacina, para o app reconhecer.')}
+          onSalvar={(v) =>
+            salvarVarios(
+              'sanidade',
+              marcados(v.animais).map((id) => ({
+                data: v.data,
+                tipo: 'vacina' as const,
+                produto: v.produto.trim(),
+                animal_id: Number(id),
+                lote_id: null,
+                proxima_data: null,
+                observacao: v.observacao.trim() || null,
+              })),
+            )
+          }
+          salvarTexto="Registrar vacina"
+          sucesso="Vacina registrada."
+          onFechar={() => setFormBrucelose(null)}
         />
       )}
     </Tela>

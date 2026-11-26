@@ -11,7 +11,7 @@ import { salvar, useDados } from '@/lib/dados';
 import { supabase, supabaseConfigurado } from '@/lib/supabase';
 import { type Cor, CORES, escolherCor, escolherTema, useCor, useTema } from '@/lib/tema';
 
-/** Dados da fazenda (valem para todos), a conta de quem está logado (nome e senha) e as preferências deste aparelho. */
+/** Dados da fazenda (a empresa desta conta), a conta de quem está logado (nome e senha) e as preferências deste aparelho. */
 export default function Perfil() {
   const { admin, nomeFazenda } = useDados();
   const tema = useTema();
@@ -45,7 +45,7 @@ export default function Perfil() {
         </div>
       </div>
 
-      <Secao titulo="Fazenda" descricao="Vale para todos que usam o sistema.">
+      <Secao titulo="Fazenda" descricao="Cada conta tem a própria fazenda, com dados separados.">
         <Linha titulo="Nome da fazenda" subtitulo={nomeFazenda || 'Ainda sem nome'} onClick={() => setForm('fazenda')} dicaAcao="Mudar o nome da fazenda" />
       </Secao>
 

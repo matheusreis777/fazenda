@@ -101,3 +101,75 @@ const r2 = await criarLote('pasto novo do teste');
 assert.equal(r2.valor, r1.valor);
 assert.deepEqual(await criarLote('   '), { erro: 'Digite o nome do lote.' });
 console.log('OK: criar lote');
+
+// Ações em lote: brincos em sequência, rateio exato em centavos e várias gravações numa chamada.
+const { faixaBrincos, ratear, salvarVarios } = await import('./dados.ts');
+assert.deepEqual(faixaBrincos('0198', 3), ['0198', '0199', '0200']);
+assert.deepEqual(faixaBrincos(' 0999 ', 2), ['0999', '1000']);
+assert.deepEqual(faixaBrincos('99', 2), ['99', '100']);
+assert.deepEqual(faixaBrincos('105000000000001', 2), ['105000000000001', '105000000000002']);
+assert.equal(faixaBrincos('A12', 2), null);
+assert.equal(faixaBrincos('12', 0), null);
+assert.equal(faixaBrincos('12', 1.5), null);
+const tres = ratear(10000, [1, 1, 1]);
+assert.deepEqual(tres, [3333.33, 3333.33, 3333.34]);
+assert.equal(Math.round(tres.reduce((s, v) => s + v, 0) * 100), 1000000);
+assert.deepEqual(ratear(1000, [300, 200]), [600, 400]);
+assert.deepEqual(ratear(100, [0, 0]), [50, 50]);
+assert.deepEqual(ratear(5, []), []);
+
+const antes = lerDados().animais.length;
+const semSaida = { saida_data: null, saida_tipo: null, saida_valor: null };
+const novoAnimal = (brinco) => ({ brinco, sexo: 'M', raca: 'Nelore', lote_id: 1, entrada_tipo: 'compra', entrada_data: '2026-11-20', entrada_peso: 200, ...semSaida });
+await salvarVarios('animais', ['0301', '0302', '0303'].map(novoAnimal));
+assert.equal(lerDados().animais.length, antes + 3);
+const criados = lerDados().animais.filter((a) => a.brinco === '0301' || a.brinco === '0302');
+await salvarVarios('animais', criados.map((a) => ({ id: a.id, lote_id: 2 })));
+assert.deepEqual(
+  lerDados().animais.filter((a) => a.brinco.startsWith('030')).map((a) => [a.brinco, a.lote_id]).sort(),
+  [['0301', 2], ['0302', 2], ['0303', 1]],
+);
+console.log('OK: ações em lote');
+
+// GTA: idade em meses, faixas por sexo e bezerras sem vacina de brucelose.
+const { idadeMeses, resumoGta, pendentesBrucelose, nascimentoDe } = await import('./dados.ts');
+assert.equal(idadeMeses('2026-05-20', '2026-11-25'), 6);
+assert.equal(idadeMeses('2026-05-31', '2026-06-30'), 0);
+assert.equal(idadeMeses('2025-12-15', '2026-12-15'), 12);
+assert.equal(idadeMeses('2025-12-16', '2026-12-15'), 11);
+
+const bicho = (id, sexo, extra) => ({ id, sexo, lote_id: 1, entrada_tipo: 'compra', entrada_data: '2026-01-01', saida_data: null, nascimento: null, ...extra });
+assert.equal(nascimentoDe(bicho(1, 'F', { entrada_tipo: 'nascimento', entrada_data: '2026-03-01' })), '2026-03-01');
+assert.equal(nascimentoDe(bicho(1, 'F', {})), null);
+const r = resumoGta(
+  [
+    bicho(1, 'M', { nascimento: '2026-01-10' }), // 10 meses
+    bicho(2, 'F', { nascimento: '2025-11-25' }), // 12 meses: ainda na primeira faixa
+    bicho(3, 'F', { nascimento: '2025-11-26' }), // 11 meses
+    bicho(4, 'M', { nascimento: '2024-01-01' }), // 34 meses
+    bicho(5, 'M', { nascimento: '2020-01-01' }),
+    bicho(6, 'F', {}), // sem idade
+  ],
+  '2026-11-25',
+);
+assert.deepEqual(r.faixas.map((f) => [f.machos, f.femeas]), [[1, 2], [0, 0], [1, 0], [1, 0]]);
+assert.deepEqual(r.semIdade, { machos: 0, femeas: 1 });
+
+const bezerras = [
+  bicho(10, 'F', { nascimento: '2026-05-20' }), // 6 meses, sem vacina: pendente
+  bicho(11, 'F', { nascimento: '2026-05-20' }), // vacinada no animal
+  bicho(12, 'F', { nascimento: '2026-05-20', lote_id: 2 }), // vacinada no lote depois do nascimento
+  bicho(13, 'F', { nascimento: '2026-09-10' }), // 2 meses: ainda não
+  bicho(14, 'F', { nascimento: '2026-02-01' }), // 9 meses: passou
+  bicho(15, 'M', { nascimento: '2026-05-20' }), // macho
+  bicho(16, 'F', { nascimento: '2026-05-20', lote_id: 3 }), // só exame no lote: continua pendente
+  bicho(17, 'F', { nascimento: '2026-05-20', saida_data: '2026-11-01' }), // já saiu
+];
+const vacinas = [
+  { id: 1, tipo: 'vacina', produto: 'Brucelose (B19)', animal_id: 11, lote_id: null, data: '2026-09-01' },
+  { id: 2, tipo: 'vacina', produto: 'rb51', animal_id: null, lote_id: 2, data: '2026-09-01' },
+  { id: 3, tipo: 'exame', produto: 'Brucelose', animal_id: null, lote_id: 3, data: '2026-09-01' },
+  { id: 4, tipo: 'vacina', produto: 'Febre aftosa', animal_id: 10, lote_id: null, data: '2026-09-01' },
+];
+assert.deepEqual(pendentesBrucelose(bezerras, vacinas, '2026-11-25').map((p) => [p.animal.id, p.meses]), [[10, 6], [16, 6]]);
+console.log('OK: GTA e brucelose');

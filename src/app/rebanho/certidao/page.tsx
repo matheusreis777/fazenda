@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { Botao, Icone, Tela, Trilha } from '@/components/ui';
-import { dataCurta, kgPorDia, montarCertidao, pesoExtenso, porArroba } from '@/lib/certidao';
-import { nomeLote, reais, TIPOS_SANIDADE, useDados } from '@/lib/dados';
+import { dataCurta, kgPorDia, montarCertidao, pesoExtenso, porArroba, tempoExtenso } from '@/lib/certidao';
+import { dias, nascimentoDe, nomeLote, reais, TIPOS_SANIDADE, useDados } from '@/lib/dados';
 import { hojeIso } from '@/lib/formato';
 
 const ENTRADA = { compra: 'Comprado', nascimento: 'Nasceu na fazenda' } as const;
@@ -59,6 +59,7 @@ export default function CertidaoAnimal() {
   const agora = new Date();
   const compraArroba = porArroba(c.compra, animal.entrada_peso);
   const vendaArroba = porArroba(c.venda, animal.saida_peso);
+  const nascimento = nascimentoDe(animal);
   // Volta para onde o animal aparece: o lote dele ou a lista dos que saíram.
   const voltar = () => router.push(animal.saida_data ? '/rebanho?saidas' : `/rebanho?lote=${animal.lote_id}`);
 
@@ -94,7 +95,9 @@ export default function CertidaoAnimal() {
                 ['Raça', animal.raca || null],
                 [animal.saida_data ? 'Lote na saída' : 'Lote atual', lote],
                 ['Situação', c.situacao],
-                [animal.entrada_tipo === 'nascimento' ? 'Idade' : 'Tempo na propriedade', `${c.tempo} (${c.dias.toLocaleString('pt-BR')} dias)`],
+                ['Nascimento', nascimento ? dataCurta(nascimento) : null],
+                ['Idade', nascimento ? tempoExtenso(Math.max(dias(nascimento, animal.saida_data ?? hojeIso()), 0)) : null],
+                animal.entrada_tipo === 'compra' && ['Tempo na propriedade', `${c.tempo} (${c.dias.toLocaleString('pt-BR')} dias)`],
               ]}
             />
           </Bloco>
@@ -107,6 +110,7 @@ export default function CertidaoAnimal() {
                 ['Peso', pesoExtenso(animal.entrada_peso)],
                 animal.entrada_tipo === 'compra' && ['Valor pago', c.compra ? reais(c.compra) : null],
                 compraArroba !== null && ['Valor por arroba', `${reais(compraArroba)}/@`],
+                animal.entrada_tipo === 'compra' && ['GTA', animal.entrada_gta || null],
               ]}
             />
           </Bloco>
@@ -120,6 +124,7 @@ export default function CertidaoAnimal() {
                   ['Peso', animal.saida_peso ? pesoExtenso(animal.saida_peso) : null],
                   animal.saida_tipo !== 'morte' && ['Valor recebido', c.venda ? reais(c.venda) : null],
                   vendaArroba !== null && ['Valor por arroba', `${reais(vendaArroba)}/@`],
+                  animal.saida_tipo !== 'morte' && ['GTA', animal.saida_gta || null],
                 ]}
               />
             </Bloco>
