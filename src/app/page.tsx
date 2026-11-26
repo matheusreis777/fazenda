@@ -5,7 +5,7 @@ import Link from 'next/link';
 
 import { Area, BarrasDeitadas, CartaoGrafico, Colunas, cor, Legenda, Segmentada, Selo, TabelaDados, Tendencia } from '@/components/graficos';
 import { Etiqueta, Icone, type NomeIcone, Linha, quebravel, Tela } from '@/components/ui';
-import { CATEGORIAS, type Categoria, diaMes, evolucaoPeso, modoExemplo, nomeLote, nomeMes, numero, numeroCurto, proximosManejos, reais, somarDias, useDados } from '@/lib/dados';
+import { CATEGORIAS, type Categoria, diaMes, evolucaoPeso, modoExemplo, nomeLote, nomeMes, numero, numeroCurto, pendentesBrucelose, proximosManejos, reais, somarDias, useDados } from '@/lib/dados';
 import { hojeIso } from '@/lib/formato';
 import { cabecasEm, fimDoMes, mesCurto, somaPorMes, ultimosMeses, variacao } from '@/lib/painel';
 
@@ -115,6 +115,7 @@ export default function Inicio() {
   const baixos = estoque.filter((e) => e.saldo < e.minimo);
   const manejos = proximosManejos(sanidade, somarDias(hoje, 7));
   const atrasados = manejos.filter((s) => s.proxima_data! < hoje);
+  const brucelose = pendentesBrucelose(animais, sanidade, hoje).length;
 
   // Por lote: cabeças e ganho médio (pastos e gráfico de ganho)
   const porLote = lotes.map((l) => {
@@ -203,7 +204,10 @@ export default function Inicio() {
           </span>
         </Indicador>
         <Indicador rotulo="Sanidade atrasada" valor={numero(atrasados.length)} icone="sanidade" cor={atrasados.length ? RUIM : BOM} alerta={atrasados.length > 0} href="/sanidade">
-          <span className="text-sm font-medium text-texto-2">{numero(manejos.length - atrasados.length)} para esta semana</span>
+          <span className="text-sm font-medium text-texto-2">
+            {numero(manejos.length - atrasados.length)} para esta semana
+            {brucelose > 0 && ` · ${numero(brucelose)} ${brucelose === 1 ? 'bezerra' : 'bezerras'} para brucelose`}
+          </span>
         </Indicador>
         <Indicador
           rotulo="Estoque baixo"

@@ -669,7 +669,7 @@ export function Avisos() {
 // Janela base (menu de ações e confirmações). Embaixo no celular, no centro no computador.
 
 /** Sem `onFechar` (ex.: enquanto grava), o × fica travado e o Esc não fecha. */
-function Janela({ titulo, descricao, onFechar, children }: { titulo: string; descricao?: ReactNode; onFechar?: () => void; children: ReactNode }) {
+export function Janela({ titulo, descricao, onFechar, children }: { titulo: string; descricao?: ReactNode; onFechar?: () => void; children: ReactNode }) {
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => e.key === 'Escape' && onFechar?.();
     window.addEventListener('keydown', aoTeclar);

@@ -130,3 +130,46 @@ assert.deepEqual(
   [['0301', 2], ['0302', 2], ['0303', 1]],
 );
 console.log('OK: ações em lote');
+
+// GTA: idade em meses, faixas por sexo e bezerras sem vacina de brucelose.
+const { idadeMeses, resumoGta, pendentesBrucelose, nascimentoDe } = await import('./dados.ts');
+assert.equal(idadeMeses('2026-05-20', '2026-11-25'), 6);
+assert.equal(idadeMeses('2026-05-31', '2026-06-30'), 0);
+assert.equal(idadeMeses('2025-12-15', '2026-12-15'), 12);
+assert.equal(idadeMeses('2025-12-16', '2026-12-15'), 11);
+
+const bicho = (id, sexo, extra) => ({ id, sexo, lote_id: 1, entrada_tipo: 'compra', entrada_data: '2026-01-01', saida_data: null, nascimento: null, ...extra });
+assert.equal(nascimentoDe(bicho(1, 'F', { entrada_tipo: 'nascimento', entrada_data: '2026-03-01' })), '2026-03-01');
+assert.equal(nascimentoDe(bicho(1, 'F', {})), null);
+const r = resumoGta(
+  [
+    bicho(1, 'M', { nascimento: '2026-01-10' }), // 10 meses
+    bicho(2, 'F', { nascimento: '2025-11-25' }), // 12 meses: ainda na primeira faixa
+    bicho(3, 'F', { nascimento: '2025-11-26' }), // 11 meses
+    bicho(4, 'M', { nascimento: '2024-01-01' }), // 34 meses
+    bicho(5, 'M', { nascimento: '2020-01-01' }),
+    bicho(6, 'F', {}), // sem idade
+  ],
+  '2026-11-25',
+);
+assert.deepEqual(r.faixas.map((f) => [f.machos, f.femeas]), [[1, 2], [0, 0], [1, 0], [1, 0]]);
+assert.deepEqual(r.semIdade, { machos: 0, femeas: 1 });
+
+const bezerras = [
+  bicho(10, 'F', { nascimento: '2026-05-20' }), // 6 meses, sem vacina: pendente
+  bicho(11, 'F', { nascimento: '2026-05-20' }), // vacinada no animal
+  bicho(12, 'F', { nascimento: '2026-05-20', lote_id: 2 }), // vacinada no lote depois do nascimento
+  bicho(13, 'F', { nascimento: '2026-09-10' }), // 2 meses: ainda não
+  bicho(14, 'F', { nascimento: '2026-02-01' }), // 9 meses: passou
+  bicho(15, 'M', { nascimento: '2026-05-20' }), // macho
+  bicho(16, 'F', { nascimento: '2026-05-20', lote_id: 3 }), // só exame no lote: continua pendente
+  bicho(17, 'F', { nascimento: '2026-05-20', saida_data: '2026-11-01' }), // já saiu
+];
+const vacinas = [
+  { id: 1, tipo: 'vacina', produto: 'Brucelose (B19)', animal_id: 11, lote_id: null, data: '2026-09-01' },
+  { id: 2, tipo: 'vacina', produto: 'rb51', animal_id: null, lote_id: 2, data: '2026-09-01' },
+  { id: 3, tipo: 'exame', produto: 'Brucelose', animal_id: null, lote_id: 3, data: '2026-09-01' },
+  { id: 4, tipo: 'vacina', produto: 'Febre aftosa', animal_id: 10, lote_id: null, data: '2026-09-01' },
+];
+assert.deepEqual(pendentesBrucelose(bezerras, vacinas, '2026-11-25').map((p) => [p.animal.id, p.meses]), [[10, 6], [16, 6]]);
+console.log('OK: GTA e brucelose');

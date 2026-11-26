@@ -31,6 +31,9 @@ export type Animal = {
   saida_valor: number | null;
   /** Data de nascimento (aproximada nos comprados). Nos nascidos na fazenda é a data de entrada. */
   nascimento?: string | null;
+  /** Número da GTA (Guia de Trânsito Animal) que veio com o animal na compra e que acompanhou a saída. */
+  entrada_gta?: string | null;
+  saida_gta?: string | null;
 };
 /** `saldo_inicial` é o que já havia ao cadastrar; `minimo` serve para destacar estoque baixo. */
 type InsumoBase = { id: number; nome: string; unidade: string; minimo: number; saldo_inicial: number };
@@ -387,6 +390,65 @@ export function evolucaoPeso(animal: Animal, pesagens: Pesagem[]): { peso: numbe
   if (!ultima) return { peso: animal.entrada_peso, data: animal.entrada_data, gmd: null };
   const periodo = dias(animal.entrada_data, ultima.data);
   return { peso: ultima.peso, data: ultima.data, gmd: periodo > 0 ? (ultima.peso - animal.entrada_peso) / periodo : null };
+}
+
+/** Nascimento conhecido: o informado ou, nos nascidos na fazenda (cadastros antigos não têm o campo), a entrada. */
+export const nascimentoDe = (a: Animal) => a.nascimento ?? (a.entrada_tipo === 'nascimento' ? a.entrada_data : null);
+
+/** Meses completos de `nascimento` até `hoje` (ambos 'AAAA-MM-DD'). */
+export function idadeMeses(nascimento: string, hoje: string): number {
+  const [a1, m1, d1] = nascimento.split('-').map(Number);
+  const [a2, m2, d2] = hoje.split('-').map(Number);
+  return (a2 - a1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
+}
+
+/**
+ * Faixas de idade da GTA de bovinos, em meses (até e incluindo `ate`).
+ * Conferir no formulário do e-SANIAGRO (Iagro/MS); se as faixas forem outras, é só mudar aqui.
+ */
+export const FAIXAS_GTA = [
+  { ate: 12, rotulo: '0 a 12 meses' },
+  { ate: 24, rotulo: '13 a 24 meses' },
+  { ate: 36, rotulo: '25 a 36 meses' },
+  { ate: Infinity, rotulo: 'Mais de 36 meses' },
+] as const;
+
+/** Machos e fêmeas por faixa de idade da GTA; `semIdade` = animais sem nascimento conhecido. */
+export function resumoGta(animais: Animal[], hoje: string) {
+  const conta = () => ({ machos: 0, femeas: 0 });
+  const faixas = FAIXAS_GTA.map((f) => ({ rotulo: f.rotulo, ...conta() }));
+  const semIdade = conta();
+  for (const a of animais) {
+    const nasc = nascimentoDe(a);
+    const alvo = nasc ? faixas[FAIXAS_GTA.findIndex((f) => idadeMeses(nasc, hoje) <= f.ate)] : semIdade;
+    if (a.sexo === 'M') alvo.machos++;
+    else alvo.femeas++;
+  }
+  return { faixas, semIdade };
+}
+
+/** Vacina contra brucelose pelo nome do produto ("Brucelose", "B19" ou "RB51"). */
+export const VACINA_BRUCELOSE = /brucel|b19|rb51/i;
+
+/**
+ * Bezerras de 3 a 8 meses ainda sem vacina contra brucelose (obrigatória; sem a declaração no órgão
+ * estadual a GTA fica bloqueada). Conta a vacina aplicada no animal ou no lote dele depois do nascimento.
+ * ponytail: usa o lote atual, porque o app não guarda por quais lotes o animal passou.
+ */
+export function pendentesBrucelose(animais: Animal[], sanidade: Sanidade[], hoje: string) {
+  return animais
+    .filter((a) => a.sexo === 'F' && !a.saida_data)
+    .map((a) => ({ animal: a, nascimento: nascimentoDe(a) }))
+    .filter((x): x is { animal: Animal; nascimento: string } => {
+      if (!x.nascimento) return false;
+      const meses = idadeMeses(x.nascimento, hoje);
+      if (meses < 3 || meses > 8) return false;
+      return !sanidade.some(
+        (s) => s.tipo === 'vacina' && VACINA_BRUCELOSE.test(s.produto) && (s.animal_id === x.animal.id || (s.lote_id === x.animal.lote_id && s.data >= x.nascimento!)),
+      );
+    })
+    .map((x) => ({ ...x, meses: idadeMeses(x.nascimento, hoje) }))
+    .sort((a, b) => a.nascimento.localeCompare(b.nascimento));
 }
 
 /**

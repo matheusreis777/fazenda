@@ -364,7 +364,7 @@ export function Formulario({
 }
 
 /** Campo `varios`: cada opção liga e desliga; "Marcar todos" para o lote inteiro. */
-function Varios({ opcoes, valor, rotuloId, onMudar }: { opcoes: { valor: string; rotulo: string }[]; valor: string; rotuloId: string; onMudar: (v: string) => void }) {
+export function Varios({ opcoes, valor, rotuloId, onMudar }: { opcoes: { valor: string; rotulo: string }[]; valor: string; rotuloId: string; onMudar: (v: string) => void }) {
   const lista = marcados(valor);
   const todos = lista.length === opcoes.length;
   const alternar = (v: string) => onMudar((lista.includes(v) ? lista.filter((m) => m !== v) : [...lista, v]).join(','));

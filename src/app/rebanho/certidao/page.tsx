@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 
 import { Botao, Icone, Tela, Trilha } from '@/components/ui';
 import { dataCurta, kgPorDia, montarCertidao, pesoExtenso, porArroba, tempoExtenso } from '@/lib/certidao';
-import { dias, nomeLote, reais, TIPOS_SANIDADE, useDados } from '@/lib/dados';
+import { dias, nascimentoDe, nomeLote, reais, TIPOS_SANIDADE, useDados } from '@/lib/dados';
 import { hojeIso } from '@/lib/formato';
 
 const ENTRADA = { compra: 'Comprado', nascimento: 'Nasceu na fazenda' } as const;
@@ -59,8 +59,7 @@ export default function CertidaoAnimal() {
   const agora = new Date();
   const compraArroba = porArroba(c.compra, animal.entrada_peso);
   const vendaArroba = porArroba(c.venda, animal.saida_peso);
-  // Animais antigos nascidos na fazenda não têm `nascimento` gravado: a chegada é o nascimento.
-  const nascimento = animal.nascimento ?? (animal.entrada_tipo === 'nascimento' ? animal.entrada_data : null);
+  const nascimento = nascimentoDe(animal);
   // Volta para onde o animal aparece: o lote dele ou a lista dos que saíram.
   const voltar = () => router.push(animal.saida_data ? '/rebanho?saidas' : `/rebanho?lote=${animal.lote_id}`);
 
@@ -111,6 +110,7 @@ export default function CertidaoAnimal() {
                 ['Peso', pesoExtenso(animal.entrada_peso)],
                 animal.entrada_tipo === 'compra' && ['Valor pago', c.compra ? reais(c.compra) : null],
                 compraArroba !== null && ['Valor por arroba', `${reais(compraArroba)}/@`],
+                animal.entrada_tipo === 'compra' && ['GTA', animal.entrada_gta || null],
               ]}
             />
           </Bloco>
@@ -124,6 +124,7 @@ export default function CertidaoAnimal() {
                   ['Peso', animal.saida_peso ? pesoExtenso(animal.saida_peso) : null],
                   animal.saida_tipo !== 'morte' && ['Valor recebido', c.venda ? reais(c.venda) : null],
                   vendaArroba !== null && ['Valor por arroba', `${reais(vendaArroba)}/@`],
+                  animal.saida_tipo !== 'morte' && ['GTA', animal.saida_gta || null],
                 ]}
               />
             </Bloco>

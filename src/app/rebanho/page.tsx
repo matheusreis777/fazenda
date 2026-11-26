@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { type Campo, Formulario, marcados, type Valores } from '@/components/formulario';
-import { Botao, Cartao, CartaoGrupo, Confirmacao, Etiqueta, Grade, Grupos, Linha, MenuAcoes, Opcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
+import { type Campo, Formulario, marcados, type Valores, Varios } from '@/components/formulario';
+import { Botao, Cartao, CartaoGrupo, Confirmacao, Etiqueta, Grade, Grupos, Janela, Linha, MenuAcoes, Opcoes, Secao, Tela, Topo, Trilha, usePaginacao, useVista, Vazio } from '@/components/ui';
 import {
   type Animal,
   criarLote,
@@ -19,11 +19,13 @@ import {
   type Pesagem,
   ratear,
   reais,
+  resumoGta,
   salvar,
   salvarVarios,
   useDados,
 } from '@/lib/dados';
-import { num, numParaTexto, textoPeso } from '@/lib/formato';
+import { dataCurta } from '@/lib/certidao';
+import { hojeIso, num, numParaTexto, textoPeso } from '@/lib/formato';
 
 const SAIDA = { venda: 'Vendido', morte: 'Morreu', abate: 'Abatido' } as const;
 
@@ -55,7 +57,13 @@ const CAMPOS_CADASTRO: Campo[] = [
     ajuda: 'Se não souber o dia, coloque uma data aproximada. Serve para mostrar a idade.',
     quando: (v) => v.e_tipo === 'compra',
   },
+  { chave: 'e_gta', rotulo: 'Número da GTA', opcional: true, dica: 'Ex.: 123456', ajuda: 'A guia que veio com o animal na compra.', quando: (v) => v.e_tipo === 'compra' },
 ];
+
+/** Número da GTA da saída (venda ou abate): a guia emitida no e-SANIAGRO para o transporte. */
+const CAMPO_GTA_SAIDA: Campo = { chave: 'gta', rotulo: 'Número da GTA', opcional: true, dica: 'Ex.: 123456', ajuda: 'A guia emitida para o transporte.' };
+/** Texto digitado → valor do banco (vazio vira null). */
+const gta = (v: string | undefined) => v?.trim() || null;
 
 /** Nascimento não pode ser depois da chegada (nos nascidos na fazenda, a chegada é o nascimento). */
 const nascimentoInvalido = (v: Valores) => (v.e_tipo === 'compra' && v.nasc && v.nasc > v.e_data ? 'O nascimento não pode ser depois da chegada.' : null);
@@ -69,13 +77,14 @@ const cadastro = (v: Valores) => ({
   entrada_peso: num(v.e_peso),
   entrada_valor: v.e_valor.trim() ? num(v.e_valor) : null,
   nascimento: v.e_tipo === 'nascimento' ? v.e_data : v.nasc || null,
+  entrada_gta: v.e_tipo === 'compra' ? gta(v.e_gta) : null,
 });
 
 /** O que está aberto na tela: o menu do animal, um dos formulários dele, ou nada. */
 type Aberto =
   | { tela: 'menu' | 'pesar' | 'mover' | 'saida' | 'corrigir' | 'desfazer' | 'excluir'; animal: Animal }
   | { tela: 'novo' | 'compraVarios'; lote?: number }
-  | { tela: 'acoesLote' | 'pesarLote' | 'moverVarios' | 'venderVarios'; lote: Lote }
+  | { tela: 'acoesLote' | 'pesarLote' | 'moverVarios' | 'venderVarios' | 'gta' | 'nascVarios'; lote: Lote }
   | { tela: 'lote'; lote?: Lote }
   | { tela: 'pesagem'; pesagem: Pesagem }
   | null;
@@ -408,6 +417,7 @@ export default function Rebanho() {
             { chave: 'valor', rotulo: 'Valor recebido (R$)', tipo: 'numero', dica: 'Ex.: 6200', quando: (v) => v.tipo === 'venda', ajuda: 'O total que recebeu pelo animal.' },
             { chave: 'valor', rotulo: 'Valor (R$)', tipo: 'numero', opcional: true, quando: (v) => v.tipo === 'abate' },
             { chave: 'peso', rotulo: 'Peso na saída', tipo: 'peso', opcional: true, quando: (v) => v.tipo !== 'morte' },
+            { ...CAMPO_GTA_SAIDA, quando: (v) => v.tipo !== 'morte' },
           ]}
           validar={(v) => (v.data < aberto.animal.entrada_data ? `A data não pode ser antes da chegada do animal (${diaMes(aberto.animal.entrada_data)}).` : null)}
           onSalvar={(v) =>
@@ -417,6 +427,7 @@ export default function Rebanho() {
               saida_data: v.data,
               saida_peso: v.tipo !== 'morte' && v.peso.trim() ? num(v.peso) : null,
               saida_valor: v.tipo !== 'morte' && v.valor.trim() ? num(v.valor) : null,
+              saida_gta: v.tipo !== 'morte' ? gta(v.gta) : null,
             })
           }
           salvarTexto="Registrar saída"
@@ -438,6 +449,7 @@ export default function Rebanho() {
             e_peso: numParaTexto(aberto.animal.entrada_peso),
             e_valor: aberto.animal.entrada_valor ? numParaTexto(aberto.animal.entrada_valor) : '',
             nasc: aberto.animal.nascimento ?? '',
+            e_gta: aberto.animal.entrada_gta ?? '',
           }}
           validar={(v) => {
             if (aberto.animal.saida_data && v.e_data > aberto.animal.saida_data) return `A chegada não pode ser depois da saída (${diaMes(aberto.animal.saida_data)}).`;
@@ -461,7 +473,7 @@ export default function Rebanho() {
           sucesso="Saída desfeita."
           onConfirmar={() =>
             brincoEmUso(aberto.animal.brinco, aberto.animal.id) ??
-            salvar('animais', { id: aberto.animal.id, saida_data: null, saida_tipo: null, saida_peso: null, saida_valor: null })
+            salvar('animais', { id: aberto.animal.id, saida_data: null, saida_tipo: null, saida_peso: null, saida_valor: null, saida_gta: null })
           }
           onFechar={fechar}
         />
@@ -552,6 +564,11 @@ export default function Rebanho() {
                   { titulo: 'Pesar o lote', descricao: 'Anotar o peso de cada animal que passou na balança, numa tela só.', onClick: () => setAberto({ tela: 'pesarLote', lote: aberto.lote }) },
                   { titulo: 'Mudar vários de lote', descricao: 'Marcar os animais e levar todos para outro pasto.', onClick: () => setAberto({ tela: 'moverVarios', lote: aberto.lote }) },
                   { titulo: 'Vender ou abater vários', descricao: 'Lançar a saída de vários animais com o valor total da venda.', onClick: () => setAberto({ tela: 'venderVarios', lote: aberto.lote }) },
+                  { titulo: 'Resumo para o GTA', descricao: 'Machos e fêmeas por faixa de idade, os números que o e-GTA pede.', onClick: () => setAberto({ tela: 'gta', lote: aberto.lote }) },
+                  // Só os comprados: nos nascidos na fazenda o nascimento é a data de entrada.
+                  ...(animaisDo(aberto.lote).some((a) => a.entrada_tipo === 'compra')
+                    ? [{ titulo: 'Informar nascimento de vários', descricao: 'Mesma data de nascimento (aproximada) para os animais comprados marcados.', onClick: () => setAberto({ tela: 'nascVarios', lote: aberto.lote }) }]
+                    : []),
                 ]
               : []),
             { titulo: 'Entrada de compra (vários animais)', descricao: 'Cadastrar de uma vez os animais de uma compra neste lote.', onClick: () => setAberto({ tela: 'compraVarios', lote: aberto.lote.id }) },
@@ -634,6 +651,7 @@ export default function Rebanho() {
                 { chave: 'valor', rotulo: 'Valor total recebido (R$)', tipo: 'numero', dica: 'Ex.: 62000', ajuda: 'O total de todos os animais marcados.', quando: (v) => v.tipo === 'venda' },
                 { chave: 'valor', rotulo: 'Valor total (R$)', tipo: 'numero', opcional: true, quando: (v) => v.tipo === 'abate' },
                 { chave: 'peso', rotulo: 'Peso total na saída', tipo: 'peso', opcional: true, ajuda: 'Todos juntos (ex.: a balança do caminhão).' },
+                CAMPO_GTA_SAIDA,
               ]}
               validar={(v) => {
                 const antes = escolhidos(v).find((a) => v.data < a.entrada_data);
@@ -652,6 +670,7 @@ export default function Rebanho() {
                     saida_data: v.data,
                     saida_valor: valores?.[i] ?? null,
                     saida_peso: pesosSaida?.[i] ?? null,
+                    saida_gta: gta(v.gta),
                   })),
                 );
               }}
@@ -676,6 +695,7 @@ export default function Rebanho() {
             { chave: 'e_peso', rotulo: 'Peso médio por cabeça', tipo: 'peso', dica: 'Ex.: 210', ajuda: 'O peso total da balança dividido pelo número de animais.' },
             { chave: 'e_valor', rotulo: 'Valor total pago (R$)', tipo: 'numero', opcional: true, dica: 'Ex.: 128000', ajuda: 'O total da compra. É dividido igualmente entre os animais.' },
             { chave: 'nasc', rotulo: 'Data de nascimento aproximada', tipo: 'data', opcional: true, ajuda: 'A mesma para todos. Serve para mostrar a idade.' },
+            { chave: 'e_gta', rotulo: 'Número da GTA', opcional: true, dica: 'Ex.: 123456', ajuda: 'A guia que veio com os animais.' },
           ]}
           iniciais={aberto.lote ? { lote: String(aberto.lote) } : null}
           validar={(v) => {
@@ -705,6 +725,7 @@ export default function Rebanho() {
                 entrada_peso: num(v.e_peso),
                 entrada_valor: valores?.[i] ?? null,
                 nascimento: v.nasc || null,
+                entrada_gta: gta(v.e_gta),
                 saida_data: null,
                 saida_tipo: null,
                 saida_valor: null,
@@ -716,6 +737,96 @@ export default function Rebanho() {
           onFechar={fechar}
         />
       )}
+
+      {aberto?.tela === 'gta' && (
+        <ResumoGta lote={aberto.lote} grupo={animaisDo(aberto.lote)} onFechar={fechar} onNascimento={() => setAberto({ tela: 'nascVarios', lote: aberto.lote })} />
+      )}
+
+      {aberto?.tela === 'nascVarios' &&
+        (() => {
+          const comprados = animaisDo(aberto.lote).filter((a) => a.entrada_tipo === 'compra');
+          const escolhidos = (v: Valores) => comprados.filter((a) => marcados(v.animais).includes(String(a.id)));
+          return (
+            <Formulario
+              titulo={`Nascimento de animais de ${aberto.lote.nome}`}
+              descricao="Para animais de uma mesma compra, com mais ou menos a mesma idade. Serve para a idade na certidão e para o resumo do GTA."
+              campos={[
+                { chave: 'animais', rotulo: 'Quais animais', tipo: 'varios', opcoes: opcoesBrinco(comprados), ajuda: 'Já vêm marcados os que ainda não têm nascimento.' },
+                { chave: 'data', rotulo: 'Data de nascimento (aproximada)', tipo: 'data' },
+              ]}
+              iniciais={{ animais: comprados.filter((a) => !a.nascimento).map((a) => String(a.id)).join(',') }}
+              validar={(v) => {
+                const antes = escolhidos(v).find((a) => v.data > a.entrada_data);
+                return antes ? `O brinco ${antes.brinco} chegou em ${dataCurta(antes.entrada_data)}, antes dessa data de nascimento.` : null;
+              }}
+              onSalvar={(v) => salvarVarios('animais', escolhidos(v).map((a) => ({ id: a.id, nascimento: v.data })))}
+              salvarTexto="Salvar nascimento"
+              sucesso="Nascimento informado."
+              onFechar={fechar}
+            />
+          );
+        })()}
     </Tela>
+  );
+}
+
+/** "Resumo para o GTA": marca os animais que vão no caminhão e mostra machos e fêmeas por faixa de idade. */
+function ResumoGta({ lote, grupo, onFechar, onNascimento }: { lote: Lote; grupo: Animal[]; onFechar: () => void; onNascimento: () => void }) {
+  const [valor, setValor] = useState(() => grupo.map((a) => String(a.id)).join(','));
+  const lista = marcados(valor);
+  const { faixas, semIdade } = resumoGta(
+    grupo.filter((a) => lista.includes(String(a.id))),
+    hojeIso(),
+  );
+  const semIdadeTotal = semIdade.machos + semIdade.femeas;
+  const linhas = semIdadeTotal > 0 ? [...faixas, { rotulo: 'Idade não informada', ...semIdade }] : faixas;
+  const soma = (k: 'machos' | 'femeas') => linhas.reduce((s, l) => s + l[k], 0);
+  const celula = 'py-1.5 pl-3 text-right';
+  return (
+    <Janela titulo={`Resumo para o GTA · ${lote.nome}`} descricao="Os números que o e-GTA pede. Deixe marcados só os animais que vão no caminhão." onFechar={onFechar}>
+      <div className="flex flex-col gap-1.5">
+        <h3 id="gta-animais" className="text-sm font-bold">
+          Animais
+        </h3>
+        <Varios opcoes={grupo.map((a) => ({ valor: String(a.id), rotulo: a.brinco }))} valor={valor} rotuloId="gta-animais" onMudar={setValor} />
+      </div>
+      <table className="w-full text-left tabular-nums">
+        <thead>
+          <tr className="text-sm text-texto-2">
+            <th className="py-1.5 font-semibold">Idade</th>
+            <th className={`${celula} font-semibold`}>Machos</th>
+            <th className={`${celula} font-semibold`}>Fêmeas</th>
+            <th className={`${celula} font-semibold`}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l) => (
+            <tr key={l.rotulo} className="border-t border-borda">
+              <td className="py-1.5 font-medium">{l.rotulo}</td>
+              <td className={celula}>{l.machos}</td>
+              <td className={celula}>{l.femeas}</td>
+              <td className={`${celula} font-bold`}>{l.machos + l.femeas}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-borda font-bold">
+            <td className="py-1.5">Total</td>
+            <td className={celula}>{soma('machos')}</td>
+            <td className={celula}>{soma('femeas')}</td>
+            <td className={celula}>{soma('machos') + soma('femeas')}</td>
+          </tr>
+        </tfoot>
+      </table>
+      {semIdadeTotal > 0 && (
+        <div className="flex flex-col items-start gap-2 rounded-xl bg-alerta-suave p-3 text-sm font-semibold text-alerta">
+          <p>
+            {semIdadeTotal} {semIdadeTotal === 1 ? 'animal está' : 'animais estão'} sem data de nascimento, e o e-GTA pede a faixa de idade de cada um.
+          </p>
+          <Botao titulo="Informar nascimento" secundario onClick={onNascimento} />
+        </div>
+      )}
+      <p className="text-sm font-medium text-texto-2">Confira se as faixas são as mesmas do formulário do e-SANIAGRO (Iagro).</p>
+    </Janela>
   );
 }
