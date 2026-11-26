@@ -1,6 +1,8 @@
 -- Checagem do schema inicial. Roda numa transação e desfaz tudo no final.
 -- Falha com exceção se o estoque ou as recorrentes estiverem errados.
 begin;
+-- Desde 0007 toda linha é de uma empresa (empresa_id = auth.uid()): grava como a conta mais antiga.
+select set_config('request.jwt.claims', json_build_object('sub', (select id from auth.users order by created_at limit 1))::text, true);
 
 do $$
 declare

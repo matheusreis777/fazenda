@@ -97,7 +97,7 @@ export type Funcionario = {
   ativo: boolean;
 };
 export type Maquina = { id: number; nome: string; tipo: string | null; identificacao: string | null; ano: number | null; ativo: boolean };
-/** Dados da própria fazenda: no banco é uma linha só, sempre com id 1 (ver supabase/migrations/0005_fazenda.sql). */
+/** Dados da própria fazenda: uma linha por empresa (conta), sempre com id 1; o banco só entrega a da conta logada (ver 0007_empresas.sql). */
 export type Fazenda = { id: 1; nome: string };
 
 export type Base = {

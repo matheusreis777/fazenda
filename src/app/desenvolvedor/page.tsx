@@ -180,12 +180,12 @@ export default function Desenvolvedor() {
       {selecionada && !acao && (
         <MenuAcoes
           titulo={selecionada.email}
-          descricao={selecionada.aprovado ? 'Esta conta pode entrar e ver os dados da fazenda.' : 'Esta conta ainda não pode ver os dados.'}
+          descricao={selecionada.aprovado ? 'Esta conta pode entrar e usar a própria fazenda.' : 'Esta conta ainda não pode usar a própria fazenda.'}
           onFechar={fecharTudo}
           acoes={[
             ...(selecionada.aprovado
               ? []
-              : [{ titulo: 'Aprovar acesso', descricao: 'A pessoa passa a ver e lançar os dados da fazenda.', onClick: () => setAcao('aprovar') }]),
+              : [{ titulo: 'Aprovar acesso', descricao: 'A pessoa passa a ver e lançar os dados da própria fazenda.', onClick: () => setAcao('aprovar') }]),
             { titulo: 'Trocar a senha', descricao: 'Definir uma senha provisória para a pessoa entrar.', onClick: () => setAcao('senha') },
             ...(selecionada.email_confirmado
               ? []
@@ -200,7 +200,7 @@ export default function Desenvolvedor() {
                   ...(selecionada.aprovado
                     ? [{ titulo: 'Bloquear acesso', descricao: 'A pessoa continua com a conta, mas deixa de ver os dados.', perigo: true, onClick: () => setAcao('bloquear') }]
                     : []),
-                  { titulo: 'Excluir conta', descricao: 'Apaga a conta de vez. A pessoa não consegue mais entrar.', perigo: true, onClick: () => setAcao('excluir') },
+                  { titulo: 'Excluir conta', descricao: 'Apaga a conta e todos os dados da fazenda dela.', perigo: true, onClick: () => setAcao('excluir') },
                 ] as Acao[])),
           ]}
         />
@@ -221,12 +221,12 @@ export default function Desenvolvedor() {
       {selecionada && acao && acao !== 'senha' && (
         <Confirmacao
           {...{
-            aprovar: { titulo: 'Aprovar acesso?', texto: `${selecionada.email} vai poder ver e lançar os dados da fazenda.`, confirmar: 'Sim, aprovar', perigo: false, sucesso: 'Acesso aprovado.' },
+            aprovar: { titulo: 'Aprovar acesso?', texto: `${selecionada.email} vai poder ver e lançar os dados da própria fazenda.`, confirmar: 'Sim, aprovar', perigo: false, sucesso: 'Acesso aprovado.' },
             bloquear: { titulo: 'Bloquear acesso?', texto: `${selecionada.email} deixa de ver os dados. Dá para aprovar de novo depois.`, confirmar: 'Sim, bloquear', perigo: true, sucesso: 'Acesso bloqueado.' },
             confirmar_email: { titulo: 'Confirmar o e-mail?', texto: `Marca o e-mail ${selecionada.email} como confirmado, sem precisar do link.`, confirmar: 'Sim, confirmar', perigo: false, sucesso: 'E-mail confirmado.' },
             dar_admin: { titulo: 'Tornar desenvolvedor?', texto: `${selecionada.email} vai poder aprovar, bloquear e excluir contas, como você.`, confirmar: 'Sim, tornar desenvolvedor', perigo: false, sucesso: 'Agora é desenvolvedor.' },
             tirar_admin: { titulo: 'Tirar o acesso de desenvolvedor?', texto: `${selecionada.email} continua usando o app, mas sem esta tela de contas.`, confirmar: 'Sim, tirar', perigo: true, sucesso: 'Acesso de desenvolvedor retirado.' },
-            excluir: { titulo: 'Excluir esta conta?', texto: `A conta ${selecionada.email} será apagada de vez. Os dados da fazenda não são afetados.`, confirmar: 'Excluir conta', perigo: true, sucesso: 'Conta excluída.' },
+            excluir: { titulo: 'Excluir esta conta?', texto: `A conta ${selecionada.email} será apagada de vez, junto com todos os dados da fazenda dela (animais, lançamentos, tudo). Não dá para desfazer.`, confirmar: 'Excluir conta', perigo: true, sucesso: 'Conta excluída.' },
           }[acao]}
           onConfirmar={() => {
             const user_id = selecionada.id;
